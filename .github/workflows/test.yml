@@ -93,7 +93,7 @@ jobs:
         if: always()
         with:
           name: Test Results
-          path: '*.xml'
+          path: 'test-results.xml,integration-test-results.xml'
           reporter: java-junit
           fail-on-error: true
           
