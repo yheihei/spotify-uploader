@@ -97,3 +97,42 @@ act -j release
 - Include acceptance tests for complete workflow scenarios
 - Test idempotent behavior with duplicate GUID scenarios
 - Verify S3 upload retry logic under failure conditions
+
+## タスクの遂行方法
+
+適用条件: 実装を依頼された時。単なる質問事項の場合適用されない。
+
+### 基本フロー
+
+- PRD の各項目を「Plan → Imp → Debug → Review → Doc」サイクルで処理する  
+- irreversible / high-risk 操作（削除・本番 DB 変更・外部 API 決定）は必ず停止する
+
+#### Plan
+
+- PRDを受け取ったら、PRDを確認し、不明点がないか確認する
+- その後、PRD の各項目を Planに落とし込む
+  - Planは `.docs/todo/YYYYMMDD_${タスクの概要}.md` に保存
+- ユーザーにPlanの確認を行い、承認されるまで次のフェーズには移行しない
+
+#### Imp
+
+- Planをもとに実装する
+
+#### Debug
+
+- 指定のテストがあればテストを行う
+- 指定がなければ関連のテストを探してテストを行う
+- 関連のテストがなければ停止して、なんのテストを行うべきかユーザーに確認する
+- テストが通ったらフォーマッタをかける
+- lintチェックを行い、エラーがあればImpに戻り、修正する
+
+#### Review
+
+- これまでのやり取りの中でPRDの変更があったら。最新のPRDに更新する
+- subagentを起動し、PRDを伝え、レビューしてもらう
+- レビュー指摘があればImpに戻る
+
+#### Doc
+
+- 実装を`.docs/design/YYYYMMDD_${タスクの概要}.md` に保存
+- ユーザーからのフィードバックを待つ。フィードバックがあれば適宜前のフェーズに戻ること
