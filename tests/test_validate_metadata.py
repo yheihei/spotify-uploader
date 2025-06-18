@@ -60,7 +60,7 @@ class TestMetadataValidator:
         assert any('Missing required field: pub_date' in error for error in error_messages)
         assert any('Missing required field: duration_seconds' in error for error in error_messages)
         assert any('Missing required field: file_size_bytes' in error for error in error_messages)
-        assert any('Missing required field: mp3_url' in error for error in error_messages)
+        assert any('Missing required field: audio_url' in error for error in error_messages)
         assert any('Missing required field: guid' in error for error in error_messages)
         assert any('Missing required field: s3_key' in error for error in error_messages)
     
@@ -73,7 +73,7 @@ class TestMetadataValidator:
             'pub_date': None,
             'duration_seconds': None,
             'file_size_bytes': None,
-            'mp3_url': None,
+            'audio_url': None,
             'guid': None,
             's3_key': None
         }
@@ -165,7 +165,7 @@ class TestSlugValidation:
             'pub_date': '2025-06-18T10:00:00+00:00',
             'duration_seconds': 1800,
             'file_size_bytes': 25000000,
-            'mp3_url': 'https://cdn.test.com/test.mp3',
+            'audio_url': 'https://cdn.test.com/test.mp3',
             'guid': 'repo-abc123-test',
             's3_key': 'podcast/2025/test.mp3'
         }
@@ -518,18 +518,19 @@ class TestUrlAndGuidValidation:
     def validator(self):
         return MetadataValidator()
     
-    def test_validate_mp3_url_valid(self, validator, sample_episode_metadata):
-        """Test valid MP3 URL formats."""
+    def test_validate_audio_url_valid(self, validator, sample_episode_metadata):
+        """Test valid audio URL formats."""
         valid_urls = [
             'https://cdn.example.com/podcast.mp3',
             'http://example.com/episodes/episode.mp3',
             'https://subdomain.domain.co.uk/path/to/file.mp3',
+            'https://cdn.example.com/episode.wav',  # WAV files are now supported
         ]
         
         for url in valid_urls:
             validator.errors = []
             validator.warnings = []
-            metadata = {**sample_episode_metadata, 'mp3_url': url}
+            metadata = {**sample_episode_metadata, 'audio_url': url}
             
             result = validator.validate(metadata)
             
@@ -537,19 +538,19 @@ class TestUrlAndGuidValidation:
             url_errors = [e for e in validator.errors if 'url' in e.lower()]
             assert len(url_errors) == 0, f"Unexpected URL error for '{url}': {url_errors}"
     
-    def test_validate_mp3_url_invalid(self, validator, sample_episode_metadata):
-        """Test invalid MP3 URL formats."""
+    def test_validate_audio_url_invalid(self, validator, sample_episode_metadata):
+        """Test invalid audio URL formats."""
         invalid_urls = [
             'not-a-url',
             'ftp://example.com/file.mp3',  # Wrong protocol
-            'https://example.com/file.wav',  # Wrong extension
+            'https://example.com/file.txt',  # Wrong extension
             'https://example.com/file with spaces.mp3',  # Spaces in URL
         ]
         
         for url in invalid_urls:
             validator.errors = []
             validator.warnings = []
-            metadata = {**sample_episode_metadata, 'mp3_url': url}
+            metadata = {**sample_episode_metadata, 'audio_url': url}
             
             result = validator.validate(metadata)
             
@@ -609,6 +610,7 @@ class TestS3KeyValidation:
             'podcast/2025/20250618-test-episode.mp3',
             'podcast/2024/20241201-year-end.mp3',
             'podcast/2026/20260101-new-year.mp3',
+            'podcast/2025/20250618-test-episode.wav',  # WAV files are now supported
         ]
         
         for key in valid_keys:
@@ -626,7 +628,7 @@ class TestS3KeyValidation:
         """Test invalid S3 key formats."""
         invalid_keys = [
             'wrong/path/file.mp3',        # Wrong prefix
-            'podcast/2025/file.wav',      # Wrong extension
+            'podcast/2025/file.txt',      # Wrong extension
             'podcast/year/file.mp3',      # Non-numeric year
             'podcast/2025',               # Missing filename
             'podcast/2025/file',          # Missing extension

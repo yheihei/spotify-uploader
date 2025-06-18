@@ -29,7 +29,7 @@ class SummaryGenerator:
             logger.warning("GITHUB_STEP_SUMMARY environment variable not set")
 
     def generate_summary(self, episode_slug: str, episode_title: str,
-                        mp3_url: str, rss_url: str,
+                        audio_url: str, rss_url: str,
                         spotify_url: Optional[str] = None,
                         verification_status: str = 'unknown',
                         upload_duration: Optional[str] = None,
@@ -71,7 +71,7 @@ class SummaryGenerator:
 ### 📁 Audio File Upload
 | 項目 | 値 |
 |------|-----|
-| **MP3 URL** | [🔗 ファイルを開く]({mp3_url}) |
+| **Audio URL** | [🔗 ファイルを開く]({audio_url}) |
 | **アップロード時間** | {upload_duration or 'N/A'} |
 
 ### 📡 RSS Feed
@@ -120,7 +120,7 @@ class SummaryGenerator:
 
 ### 📋 確認事項
 - [ ] RSSフィードにエピソードが含まれているか
-- [ ] MP3ファイルが正しくアップロードされているか
+- [ ] 音声ファイルが正しくアップロードされているか
 - [ ] Spotify for Podcastersの設定に問題がないか
 """.format(rss_url)
         
@@ -137,7 +137,7 @@ class SummaryGenerator:
         summary += json.dumps({
             'episode_slug': episode_slug,
             'episode_title': episode_title,
-            'mp3_url': mp3_url,
+            'audio_url': audio_url,
             'rss_url': rss_url,
             'spotify_url': spotify_url,
             'verification_status': verification_status,
@@ -220,7 +220,7 @@ def main():
     )
     parser.add_argument('--episode-slug', required=True, help='Episode slug')
     parser.add_argument('--episode-title', required=True, help='Episode title')
-    parser.add_argument('--mp3-url', required=True, help='MP3 file URL')
+    parser.add_argument('--audio-url', required=True, help='Audio file URL (MP3 or WAV)')
     parser.add_argument('--rss-url', required=True, help='RSS feed URL')
     parser.add_argument('--spotify-url', help='Spotify episode URL')
     parser.add_argument('--verification-status', default='unknown', help='Verification status')
@@ -238,7 +238,7 @@ def main():
         summary_content = generator.generate_summary(
             episode_slug=args.episode_slug,
             episode_title=args.episode_title,
-            mp3_url=args.mp3_url,
+            audio_url=args.audio_url,
             rss_url=args.rss_url,
             spotify_url=args.spotify_url,
             verification_status=args.verification_status,

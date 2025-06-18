@@ -39,13 +39,16 @@ class EpisodeMetadata:
     pub_date: datetime
     duration_seconds: int
     file_size_bytes: int
-    mp3_url: str
+    audio_url: str
     guid: str
     spotify_url: Optional[str] = None
+    file_extension: Optional[str] = '.mp3'
 
     @classmethod
     def from_dict(cls, data: dict) -> 'EpisodeMetadata':
         """Create EpisodeMetadata from dictionary"""
+        # Support both old mp3_url and new audio_url for backward compatibility
+        audio_url = data.get('audio_url', data.get('mp3_url', ''))
         return cls(
             slug=data['slug'],
             title=data['title'],
@@ -53,9 +56,10 @@ class EpisodeMetadata:
             pub_date=datetime.fromisoformat(data['pub_date'].replace('Z', '+00:00')),
             duration_seconds=data['duration_seconds'],
             file_size_bytes=data['file_size_bytes'],
-            mp3_url=data['mp3_url'],
+            audio_url=audio_url,
             guid=data['guid'],
-            spotify_url=data.get('spotify_url')
+            spotify_url=data.get('spotify_url'),
+            file_extension=data.get('file_extension', '.mp3')
         )
 
     def to_dict(self) -> dict:
@@ -67,9 +71,10 @@ class EpisodeMetadata:
             'pub_date': self.pub_date.isoformat(),
             'duration_seconds': self.duration_seconds,
             'file_size_bytes': self.file_size_bytes,
-            'mp3_url': self.mp3_url,
+            'audio_url': self.audio_url,
             'guid': self.guid,
-            'spotify_url': self.spotify_url
+            'spotify_url': self.spotify_url,
+            'file_extension': self.file_extension
         }
 
 
@@ -118,7 +123,7 @@ class RSSGenerator:
         episodes = []
         
         try:
-            # List all MP3 files in the podcast directory
+            # List all audio files in the podcast directory
             paginator = self.s3_client.get_paginator('list_objects_v2')
             pages = paginator.paginate(
                 Bucket=self.bucket_name,
@@ -132,11 +137,17 @@ class RSSGenerator:
                     
                 for obj in page['Contents']:
                     key = obj['Key']
-                    if not key.endswith('.mp3'):
+                    if not (key.endswith('.mp3') or key.endswith('.wav')):
                         continue
                     
-                    # Extract slug from S3 key: podcast/2025/20250618-title.mp3
-                    slug = key.split('/')[-1].replace('.mp3', '')
+                    # Extract slug and file extension from S3 key: podcast/2025/20250618-title.mp3
+                    filename = key.split('/')[-1]
+                    if filename.endswith('.mp3'):
+                        slug = filename.replace('.mp3', '')
+                        file_extension = '.mp3'
+                    else:  # WAV file
+                        slug = filename.replace('.wav', '')
+                        file_extension = '.wav'
                     
                     # Try to get episode metadata from S3 metadata
                     try:
@@ -154,9 +165,10 @@ class RSSGenerator:
                             pub_date=self._parse_date_from_slug(slug),
                             duration_seconds=int(metadata.get('duration', '0') or '0'),
                             file_size_bytes=obj['Size'],
-                            mp3_url=f"{self.base_url}/{key}",
+                            audio_url=f"{self.base_url}/{key}",
                             guid=metadata.get('guid', f'episode-{slug}'),
-                            spotify_url=metadata.get('spotify_url')
+                            spotify_url=metadata.get('spotify_url'),
+                            file_extension=file_extension
                         )
                         
                         episodes.append(episode)
@@ -259,13 +271,19 @@ class RSSGenerator:
                 fe.description(episode.description)
                 fe.guid(episode.guid)
                 fe.pubDate(episode.pub_date)
-                fe.link(href=episode.mp3_url)
+                fe.link(href=episode.audio_url)
                 
                 # Enclosure (audio file)
+                # Determine MIME type based on file extension
+                if episode.file_extension == '.wav':
+                    mime_type = 'audio/wav'
+                else:  # Default to MP3
+                    mime_type = 'audio/mpeg'
+                
                 fe.enclosure(
-                    url=episode.mp3_url,
+                    url=episode.audio_url,
                     length=str(episode.file_size_bytes),
-                    type='audio/mpeg'
+                    type=mime_type
                 )
                 
                 # iTunes-specific tags
@@ -383,7 +401,7 @@ class RSSGenerator:
     def update_episode_metadata(self, episode: EpisodeMetadata):
         """Update episode metadata in S3 object metadata"""
         year = episode.pub_date.year
-        s3_key = f"podcast/{year}/{episode.slug}.mp3"
+        s3_key = f"podcast/{year}/{episode.slug}{episode.file_extension}"
         
         try:
             # Get current object

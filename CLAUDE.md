@@ -6,12 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 日本語で応答すること
 
+## githubにアクセスする時
+
+`gh`コマンドを使うことを推奨
+
 ## Project Overview
 
 This is a **Spotify Podcast Automation System** that eliminates manual operations for podcast episode uploads. The system automates the entire workflow from audio file upload to Spotify availability confirmation via RSS feed generation and GitHub Actions CI/CD.
 
 **Key Architecture:**
-- Upload MP3 files to AWS S3 with public access
+- Upload audio files (MP3/WAV) to AWS S3 with public access
 - Generate RSS feeds using Python `feedgen` library
 - Deploy via GitHub Actions with automatic Spotify indexing verification
 - Complete workflow must execute within 2 minutes on GitHub Actions
@@ -62,7 +66,7 @@ act -j release
 ├── scripts/
 │   ├── build_rss.py                # RSS generation with feedgen
 │   └── check_spotify.py            # Spotify API verification
-├── episodes/                       # MP3 files trigger workflow
+├── episodes/                       # Audio files (MP3/WAV) trigger workflow
 └── .docs/prd/seed.md               # Comprehensive Japanese PRD with full requirements
 ```
 
@@ -74,13 +78,13 @@ act -j release
 
 **Security Considerations:**
 - All S3 objects must be publicly accessible (no signed URLs - Spotify requires direct access)
-- Cache-Control headers set to `public, max-age=300` for RSS and MP3 files
+- Cache-Control headers set to `public, max-age=300` for RSS and audio files
 
 ## Data Formats
 
 **Episode Naming Convention:**
 - Slug format: `YYYYMMDD-title-kebab` (e.g., `20250618-automation-pipeline`)
-- S3 path: `podcast/{YYYY}/{slug}.mp3`
+- S3 path: `podcast/{YYYY}/{slug}.{mp3|wav}` (supports both MP3 and WAV)
 
 **RSS Requirements:**
 - Must include all episodes in single feed

@@ -45,7 +45,7 @@ class MetadataValidator:
         self._validate_pub_date(metadata.get('pub_date'))
         self._validate_duration(metadata.get('duration_seconds'))
         self._validate_file_size(metadata.get('file_size_bytes'))
-        self._validate_urls(metadata.get('mp3_url'), metadata.get('guid'))
+        self._validate_urls(metadata.get('audio_url'), metadata.get('guid'))
         self._validate_s3_key(metadata.get('s3_key'))
         
         # Log results
@@ -70,7 +70,7 @@ class MetadataValidator:
         """Validate required fields are present"""
         required_fields = [
             'slug', 'title', 'description', 'pub_date',
-            'duration_seconds', 'file_size_bytes', 'mp3_url',
+            'duration_seconds', 'file_size_bytes', 'audio_url',
             'guid', 's3_key'
         ]
         
@@ -240,15 +240,15 @@ class MetadataValidator:
         elif file_size_bytes > 500 * 1024 * 1024:  # 500MB
             self.warnings.append(f"File size is very large: {file_size_bytes/(1024*1024):.1f} MB")
 
-    def _validate_urls(self, mp3_url: str, guid: str):
+    def _validate_urls(self, audio_url: str, guid: str):
         """Validate URLs and GUID"""
-        if mp3_url:
-            if not mp3_url.startswith(('http://', 'https://')):
-                self.errors.append(f"MP3 URL must start with http:// or https://: {mp3_url}")
-            elif not mp3_url.endswith('.mp3'):
-                self.errors.append(f"MP3 URL must end with .mp3: {mp3_url}")
-            elif ' ' in mp3_url:
-                self.errors.append(f"MP3 URL contains spaces: {mp3_url}")
+        if audio_url:
+            if not audio_url.startswith(('http://', 'https://')):
+                self.errors.append(f"Audio URL must start with http:// or https://: {audio_url}")
+            elif not (audio_url.endswith('.mp3') or audio_url.endswith('.wav')):
+                self.errors.append(f"Audio URL must end with .mp3 or .wav: {audio_url}")
+            elif ' ' in audio_url:
+                self.errors.append(f"Audio URL contains spaces: {audio_url}")
         
         if guid:
             # GUID should follow repo-{sha}-{slug} format
@@ -266,19 +266,19 @@ class MetadataValidator:
         if not s3_key:
             return  # Already caught by required fields check
         
-        # Should follow podcast/{YYYY}/{slug}.mp3 format
+        # Should follow podcast/{YYYY}/{slug}.{mp3|wav} format
         if not s3_key.startswith('podcast/'):
             self.errors.append(f"S3 key should start with 'podcast/': {s3_key}")
             return
         
-        if not s3_key.endswith('.mp3'):
-            self.errors.append(f"S3 key should end with '.mp3': {s3_key}")
+        if not (s3_key.endswith('.mp3') or s3_key.endswith('.wav')):
+            self.errors.append(f"S3 key should end with '.mp3' or '.wav': {s3_key}")
             return
         
         # Check year part
         parts = s3_key.split('/')
         if len(parts) != 3:
-            self.errors.append(f"S3 key should have format 'podcast/YYYY/slug.mp3': {s3_key}")
+            self.errors.append(f"S3 key should have format 'podcast/YYYY/slug.{{mp3|wav}}': {s3_key}")
             return
         
         year_part = parts[1]

@@ -448,7 +448,7 @@ class TestMainFunction:
              patch('upload_s3.S3Uploader') as mock_uploader_class:
             
             mock_args.return_value = Mock(
-                mp3_file=temporary_mp3_file,
+                audio_file=temporary_mp3_file,
                 s3_key='test/episode.mp3',
                 bucket='test-bucket',
                 max_retries=3,
@@ -472,7 +472,7 @@ class TestMainFunction:
                 
                 # Verify GitHub Actions outputs were printed
                 output_calls = [str(call) for call in mock_print.call_args_list]
-                assert any('::set-output name=mp3-url::' in call for call in output_calls)
+                assert any('::set-output name=audio-url::' in call for call in output_calls)
                 assert any('::set-output name=duration::' in call for call in output_calls)
                 assert any('::set-output name=attempts::' in call for call in output_calls)
                 assert any('::set-output name=file-size::' in call for call in output_calls)
@@ -487,7 +487,7 @@ class TestMainFunction:
              patch('upload_s3.S3Uploader') as mock_uploader_class:
             
             mock_args.return_value = Mock(
-                mp3_file=temporary_mp3_file,
+                audio_file=temporary_mp3_file,
                 s3_key='test/episode.mp3',
                 bucket='nonexistent-bucket',
                 max_retries=3,
@@ -513,7 +513,7 @@ class TestMainFunction:
              patch('upload_s3.S3Uploader') as mock_uploader_class:
             
             mock_args.return_value = Mock(
-                mp3_file=temporary_mp3_file,
+                audio_file=temporary_mp3_file,
                 s3_key='test/episode.mp3',
                 bucket='test-bucket',
                 max_retries=3,
@@ -550,7 +550,7 @@ class TestMainFunction:
              patch('upload_s3.S3Uploader') as mock_uploader_class:
             
             mock_args.return_value = Mock(
-                mp3_file=temporary_mp3_file,
+                audio_file=temporary_mp3_file,
                 s3_key='test/episode.mp3',
                 bucket='test-bucket',
                 max_retries=3,
@@ -586,7 +586,7 @@ class TestMainFunction:
         
         with patch('upload_s3.argparse.ArgumentParser.parse_args') as mock_args:
             mock_args.return_value = Mock(
-                mp3_file=temporary_mp3_file,
+                audio_file=temporary_mp3_file,
                 s3_key='test/episode.mp3',
                 bucket='test-bucket',
                 max_retries=3,

@@ -29,10 +29,11 @@ def sample_episode_metadata():
         "pub_date": "2025-06-18T10:00:00+00:00",
         "duration_seconds": 1800,
         "file_size_bytes": 25000000,
-        "mp3_url": "https://cdn.example.com/podcast/2025/20250618-test-episode.mp3",
+        "audio_url": "https://cdn.example.com/podcast/2025/20250618-test-episode.mp3",
         "guid": "repo-abc1234-20250618-test-episode",
         "s3_key": "podcast/2025/20250618-test-episode.mp3",
-        "year": 2025
+        "year": 2025,
+        "file_extension": ".mp3"
     }
 
 
@@ -46,7 +47,7 @@ def invalid_episode_metadata():
         "pub_date": "invalid-date",
         "duration_seconds": -1,
         "file_size_bytes": 0,
-        "mp3_url": "not-a-valid-url",
+        "audio_url": "not-a-valid-url",
         "guid": "invalid-guid",
         "s3_key": "invalid/path"
     }
@@ -79,6 +80,11 @@ def mock_s3_client():
                 {
                     'Key': 'podcast/2025/20250618-test-episode.mp3',
                     'Size': 25000000,
+                    'LastModified': datetime.now(timezone.utc)
+                },
+                {
+                    'Key': 'podcast/2025/20250618-wav-test-episode.wav',
+                    'Size': 30000000,
                     'LastModified': datetime.now(timezone.utc)
                 }
             ]
@@ -151,6 +157,26 @@ def temporary_mp3_file():
     with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
         # Write some dummy MP3-like data
         tmp_file.write(b'ID3\x03\x00\x00\x00' + b'0' * 1000)  # Minimal MP3 header + data
+        tmp_file.flush()
+        yield tmp_file.name
+    
+    # Cleanup
+    try:
+        os.unlink(tmp_file.name)
+    except FileNotFoundError:
+        pass
+
+
+@pytest.fixture
+def temporary_wav_file():
+    """Create a temporary WAV-like file for testing."""
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+        # Write some dummy WAV-like data (minimal RIFF header)
+        tmp_file.write(b'RIFF' + (1000).to_bytes(4, 'little') + b'WAVE')
+        tmp_file.write(b'fmt ' + (16).to_bytes(4, 'little'))  # Format chunk
+        tmp_file.write(b'\x00' * 16)  # Format data
+        tmp_file.write(b'data' + (1000).to_bytes(4, 'little'))  # Data chunk header
+        tmp_file.write(b'\x00' * 1000)  # Audio data
         tmp_file.flush()
         yield tmp_file.name
     

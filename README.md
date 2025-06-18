@@ -1,10 +1,10 @@
 # 🎧 Spotify Podcast Automation System
 
-MP3ファイルのアップロードからSpotifyでの配信確認まで、完全自動化されたポッドキャスト配信システムです。
+音声ファイル（MP3/WAV）のアップロードからSpotifyでの配信確認まで、完全自動化されたポッドキャスト配信システムです。
 
 ## 🌟 特徴
 
-- **完全自動化**: MP3をcommitするだけで配信完了
+- **完全自動化**: 音声ファイル（MP3/WAV）をcommitするだけで配信完了
 - **高速処理**: GitHub Actions で2分以内に処理完了
 - **信頼性**: リトライ機構とエラーハンドリング内蔵
 - **観測性**: GitHub Actions Summary
@@ -14,7 +14,7 @@ MP3ファイルのアップロードからSpotifyでの配信確認まで、完�
 
 ```mermaid
 graph TB
-    A[MP3ファイル] --> B[GitHub Actions]
+    A[音声ファイル<br/>MP3/WAV] --> B[GitHub Actions]
     B --> C[AWS S3アップロード]
     B --> D[RSS生成・配信]
     D --> E[Spotify検証]
@@ -49,15 +49,20 @@ BASE_URL=https://cdn.yourpodcast.com
 
 ### 2. エピソード配信
 
-1. MP3ファイルを `episodes/` ディレクトリに配置
-2. ファイル名を `YYYYMMDD-title-kebab.mp3` 形式で命名
+1. 音声ファイル（MP3またはWAV）を `episodes/` ディレクトリに配置
+2. ファイル名を `YYYYMMDD-title-kebab.mp3` または `YYYYMMDD-title-kebab.wav` 形式で命名
 3. mainブランチにcommit & push
 4. 自動配信処理が開始されます！
 
 ```bash
-# 例
+# MP3の例
 git add episodes/20250618-automation-pipeline.mp3
 git commit -m "Add new episode: automation pipeline"
+git push origin main
+
+# WAVの例  
+git add episodes/20250618-high-quality-interview.wav
+git commit -m "Add new episode: high quality interview"
 git push origin main
 ```
 
@@ -79,7 +84,7 @@ git push origin main
 │   ├── generate_summary.py # サマリー生成
 │   └── generate_summary.py # サマリー生成
 ├── episodes/
-│   └── [MP3ファイル]       # エピソードファイル
+│   └── [音声ファイル]       # エピソードファイル（MP3/WAV）
 ├── requirements.txt        # Python依存関係
 └── CLAUDE.md              # AI開発ガイド
 ```
@@ -135,7 +140,9 @@ python scripts/build_rss.py --bucket test-bucket --base-url https://test.com
 python scripts/check_spotify.py --episode-guid test-guid --show-id your-show-id
 
 # メタデータ抽出テスト
-python scripts/extract_metadata.py --mp3-file test.mp3 --base-url https://test.com --commit-sha abc123
+python scripts/extract_metadata.py --audio-file test.mp3 --base-url https://test.com --commit-sha abc123
+# または
+python scripts/extract_metadata.py --audio-file test.wav --base-url https://test.com --commit-sha abc123
 ```
 
 ### 手動実行
@@ -144,7 +151,7 @@ GitHub Actionsの「Podcast Release Automation」ワークフローから手動�
 
 1. Actions タブに移動
 2. "Run workflow" をクリック
-3. MP3ファイルパスを指定して実行
+3. 音声ファイルパス（MP3/WAV）を指定して実行
 
 ### モニタリング
 
@@ -157,7 +164,7 @@ GitHub Actionsの「Podcast Release Automation」ワークフローから手動�
 ### よくある問題
 
 #### ワークフローが開始されない
-- [ ] ファイル名が `YYYYMMDD-title.mp3` 形式か確認
+- [ ] ファイル名が `YYYYMMDD-title.mp3` または `YYYYMMDD-title.wav` 形式か確認
 - [ ] `main` ブランチにpushされているか確認
 - [ ] `episodes/` ディレクトリ内にファイルがあるか確認
 
@@ -198,8 +205,10 @@ aws cloudfront create-invalidation --distribution-id DIST_ID --paths "/rss.xml"
 
 #### 手動エピソード追加
 ```bash
-# S3に直接アップロード
+# S3に直接アップロード（MP3の場合）
 aws s3 cp episode.mp3 s3://bucket/podcast/2025/episode-name.mp3 --acl public-read
+# WAVの場合
+aws s3 cp episode.wav s3://bucket/podcast/2025/episode-name.wav --acl public-read
 
 # RSS手動更新
 python scripts/build_rss.py --bucket bucket --base-url https://cdn.example.com
