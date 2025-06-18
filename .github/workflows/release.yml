@@ -1,0 +1,302 @@
+name: Podcast Release Automation
+
+on:
+  push:
+    branches: [main]
+    paths: ['episodes/**/*.mp3']
+  workflow_dispatch:
+    inputs:
+      episode_path:
+        description: 'MP3ファイルのパス (episodes/から始まる相対パス)'
+        required: true
+        type: string
+      force_republish:
+        description: '既存エピソードの再配信を強制する'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  # AWS設定
+  AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+  AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+  
+  # Spotify設定
+  SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+  SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+  SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+  SPOTIFY_SHOW_ID: ${{ secrets.SPOTIFY_SHOW_ID }}
+  
+  # システム設定
+  BASE_URL: ${{ secrets.BASE_URL || 'https://cdn.yourpodcast.com' }}
+  MAX_RETRY_ATTEMPTS: ${{ vars.MAX_RETRY_ATTEMPTS || '3' }}
+  SPOTIFY_POLL_INTERVAL: ${{ vars.SPOTIFY_POLL_INTERVAL || '30' }}
+  SPOTIFY_MAX_ATTEMPTS: ${{ vars.SPOTIFY_MAX_ATTEMPTS || '10' }}
+  
+
+concurrency:
+  group: podcast-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Run Critical Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Setup test environment variables
+        run: |
+          echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
+          echo "AWS_S3_BUCKET=test-bucket" >> $GITHUB_ENV
+          echo "BASE_URL=https://cdn.test.com" >> $GITHUB_ENV
+          echo "PODCAST_TITLE=Test Podcast" >> $GITHUB_ENV
+          echo "PODCAST_DESCRIPTION=Test description" >> $GITHUB_ENV
+          echo "PODCAST_AUTHOR=Test Author" >> $GITHUB_ENV
+          echo "PODCAST_EMAIL=test@example.com" >> $GITHUB_ENV
+          
+      - name: Run critical tests (RSS generation focus)
+        run: |
+          pytest tests/test_build_rss.py tests/test_validate_metadata.py \
+            --verbose \
+            --tb=short \
+            -m "not slow and not integration and not network" \
+            --maxfail=5 \
+            --timeout=60
+            
+      - name: Validate script imports
+        run: |
+          for script in scripts/*.py; do
+            python -c "
+          import sys
+          import os
+          sys.path.insert(0, 'scripts')
+          script_name = '$(basename "$script" .py)'
+          __import__(script_name)
+          " || exit 1
+          done
+
+  setup:
+    name: Setup and Metadata Extraction
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      episode-slug: ${{ steps.extract.outputs.slug }}
+      episode-title: ${{ steps.extract.outputs.title }}
+      episode-guid: ${{ steps.extract.outputs.guid }}
+      episode-metadata: ${{ steps.extract.outputs.metadata }}
+      mp3-path: ${{ steps.extract.outputs.mp3-path }}
+      s3-key: ${{ steps.extract.outputs.s3-key }}
+      commit-sha: ${{ steps.extract.outputs.commit-sha }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Detect changed MP3 files
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mp3_files=${{ github.event.inputs.episode_path }}" >> $GITHUB_OUTPUT
+          else
+            # Git diffで変更されたMP3ファイルを検出
+            mp3_files=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep 'episodes/.*\.mp3$' || echo "")
+            if [ -z "$mp3_files" ]; then
+              echo "No MP3 files found in the diff" >&2
+              exit 1
+            fi
+            echo "mp3_files=$mp3_files" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Extract episode metadata
+        id: extract
+        run: |
+          python scripts/extract_metadata.py \
+            --mp3-file "${{ steps.detect.outputs.mp3_files }}" \
+            --base-url "${{ env.BASE_URL }}" \
+            --commit-sha "${{ github.sha }}"
+            
+      - name: Validate metadata
+        run: |
+          python scripts/validate_metadata.py \
+            --metadata '${{ steps.extract.outputs.metadata }}'
+
+  upload:
+    name: Upload MP3 to S3
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mp3-url: ${{ steps.upload.outputs.mp3-url }}
+      upload-duration: ${{ steps.upload.outputs.duration }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Upload MP3 to S3
+        id: upload
+        run: |
+          python scripts/upload_s3.py \
+            --mp3-file "${{ needs.setup.outputs.mp3-path }}" \
+            --s3-key "${{ needs.setup.outputs.s3-key }}" \
+            --bucket "${{ env.AWS_S3_BUCKET }}" \
+            --max-retries "${{ env.MAX_RETRY_ATTEMPTS }}"
+
+  rss-deploy:
+    name: Generate and Deploy RSS Feed
+    needs: [setup, upload]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      rss-url: ${{ steps.deploy.outputs.rss-url }}
+      rss-generation-duration: ${{ steps.deploy.outputs.duration }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Generate and deploy RSS feed
+        id: deploy
+        run: |
+          python scripts/build_rss.py \
+            --bucket "${{ env.AWS_S3_BUCKET }}" \
+            --base-url "${{ env.BASE_URL }}" \
+            --episode-metadata '${{ needs.setup.outputs.episode-metadata }}' \
+            --commit-sha "${{ needs.setup.outputs.commit-sha }}"
+
+  verify:
+    name: Verify Spotify Indexing
+    needs: [setup, rss-deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verification-status: ${{ steps.verify.outputs.status }}
+      spotify-url: ${{ steps.verify.outputs.spotify-url }}
+      attempts-made: ${{ steps.verify.outputs.attempts }}
+      verification-duration: ${{ steps.verify.outputs.duration }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Verify Spotify indexing
+        id: verify
+        run: |
+          python scripts/check_spotify.py \
+            --episode-guid "${{ needs.setup.outputs.episode-guid }}" \
+            --show-id "${{ env.SPOTIFY_SHOW_ID }}" \
+            --client-id "${{ env.SPOTIFY_CLIENT_ID }}" \
+            --client-secret "${{ env.SPOTIFY_CLIENT_SECRET }}" \
+            --refresh-token "${{ env.SPOTIFY_REFRESH_TOKEN }}" \
+            --max-attempts "${{ env.SPOTIFY_MAX_ATTEMPTS }}" \
+            --poll-interval "${{ env.SPOTIFY_POLL_INTERVAL }}"
+            
+      - name: Generate Actions Summary
+        if: always()
+        run: |
+          python scripts/generate_summary.py \
+            --episode-slug "${{ needs.setup.outputs.episode-slug }}" \
+            --episode-title "${{ needs.setup.outputs.episode-title }}" \
+            --mp3-url "${{ needs.upload.outputs.mp3-url }}" \
+            --rss-url "${{ needs.rss-deploy.outputs.rss-url }}" \
+            --spotify-url "${{ steps.verify.outputs.spotify-url }}" \
+            --verification-status "${{ steps.verify.outputs.status }}" \
+            --upload-duration "${{ needs.upload.outputs.upload-duration }}" \
+            --rss-duration "${{ needs.rss-deploy.outputs.rss-generation-duration }}" \
+            --verification-duration "${{ steps.verify.outputs.verification-duration }}" \
+            --attempts-made "${{ steps.verify.outputs.attempts }}"
+
+  cleanup:
+    name: Cleanup and Finalize
+    needs: [setup, upload, rss-deploy, verify]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Cleanup temporary files
+        run: |
+          echo "Cleaning up temporary files and resources..."
+          # 必要に応じて一時ファイルの削除等
+          
+      - name: Update deployment status
+        if: needs.verify.outputs.verification-status == 'success'
+        run: |
+          echo "Deployment completed successfully"
+          echo "Episode: ${{ needs.setup.outputs.episode-slug }}"
+          echo "Spotify URL: ${{ needs.verify.outputs.spotify-url }}"
+          
+      - name: Log failure details
+        if: failure() || needs.verify.outputs.verification-status != 'success'
+        run: |
+          echo "Deployment failed or verification unsuccessful"
+          echo "Episode: ${{ needs.setup.outputs.episode-slug }}"
+          echo "Check logs above for detailed error information"

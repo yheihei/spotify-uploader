@@ -1,0 +1,36 @@
+# Core dependencies for Spotify Podcast Automation
+# RSS Feed Generation
+feedgen>=0.9.0
+
+# AWS S3 Integration
+boto3>=1.34.0
+botocore>=1.34.0
+
+# HTTP Requests and API Integration
+requests>=2.31.0
+urllib3>=1.26.0
+
+# MP3 Metadata Extraction
+mutagen>=1.47.0
+
+# Date/Time Utilities
+python-dateutil>=2.8.0
+
+# JSON/Data Processing
+lxml>=4.9.0
+
+# Development and Testing Dependencies
+pytest>=7.4.0
+pytest-mock>=3.11.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.1.0
+
+# Code Quality
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Utility Libraries
+click>=8.1.0
+pydantic>=2.0.0
+typing-extensions>=4.7.0
