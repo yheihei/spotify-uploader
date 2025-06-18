@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Episode Data Schema",
+  "description": "Schema for episode_data.json files",
+  "type": "object",
+  "required": ["title", "description"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Episode title",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "Episode description",
+      "minLength": 1
+    },
+    "itunes_summary": {
+      "type": "string",
+      "description": "iTunes detailed description (can include HTML tags)"
+    },
+    "itunes_subtitle": {
+      "type": "string",
+      "description": "iTunes subtitle"
+    },
+    "itunes_keywords": {
+      "type": "array",
+      "description": "iTunes keywords",
+      "items": {
+        "type": "string"
+      }
+    },
+    "itunes_explicit": {
+      "type": "string",
+      "description": "iTunes explicit content flag",
+      "enum": ["yes", "no", "clean"],
+      "default": "no"
+    },
+    "season": {
+      "type": "integer",
+      "description": "Season number",
+      "minimum": 1
+    },
+    "episode_number": {
+      "type": "integer",
+      "description": "Episode number",
+      "minimum": 1
+    },
+    "episode_type": {
+      "type": "string",
+      "description": "Episode type",
+      "enum": ["full", "trailer", "bonus"],
+      "default": "full"
+    },
+    "episode_image": {
+      "type": "string",
+      "description": "Filename of the episode image in the same directory"
+    },
+    "episode_image_url": {
+      "type": "string",
+      "description": "External URL of the episode image"
+    },
+    "pub_date": {
+      "type": "string",
+      "description": "Publication date in ISO 8601 format",
+      "format": "date-time"
+    },
+    "guid": {
+      "type": "string",
+      "description": "Unique identifier for the episode"
+    },
+    "duration_seconds": {
+      "type": "integer",
+      "description": "Duration in seconds",
+      "minimum": 0
+    },
+    "spotify_url": {
+      "type": "string",
+      "description": "Spotify URL for the episode"
+    },
+    "custom_metadata": {
+      "type": "object",
+      "description": "Custom metadata for future extensions"
+    }
+  }
+}

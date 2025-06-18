@@ -1,0 +1,12 @@
+{
+  "title": "サンプルエピソード: 新機能紹介",
+  "description": "エピソードディレクトリ構造とiTunes拡張フィールドのデモンストレーションエピソードです。",
+  "season": 1,
+  "episode_number": 1,
+  "episode_type": "full",
+  "itunes_summary": "このエピソードでは、新しく導入されたエピソードディレクトリ構造について詳しく説明します。episode_data.jsonファイルを使用することで、豊富なメタデータとiTunes拡張フィールドをサポートできます。",
+  "itunes_subtitle": "新機能のデモンストレーション",
+  "itunes_keywords": ["sample", "demo", "new-features", "itunes", "metadata"],
+  "itunes_explicit": "no",
+  "episode_image": "cover.jpg"
+}

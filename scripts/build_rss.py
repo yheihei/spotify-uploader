@@ -43,6 +43,16 @@ class EpisodeMetadata:
     guid: str
     spotify_url: Optional[str] = None
     file_extension: Optional[str] = '.mp3'
+    
+    # iTunes拡張フィールド
+    episode_image_url: Optional[str] = None
+    season: Optional[int] = None
+    episode_number: Optional[int] = None
+    episode_type: Optional[str] = 'full'  # full/trailer/bonus
+    itunes_summary: Optional[str] = None
+    itunes_subtitle: Optional[str] = None
+    itunes_keywords: Optional[List[str]] = None
+    itunes_explicit: Optional[str] = 'no'  # yes/no/clean
 
     @classmethod
     def from_dict(cls, data: dict) -> 'EpisodeMetadata':
@@ -59,12 +69,21 @@ class EpisodeMetadata:
             audio_url=audio_url,
             guid=data['guid'],
             spotify_url=data.get('spotify_url'),
-            file_extension=data.get('file_extension', '.mp3')
+            file_extension=data.get('file_extension', '.mp3'),
+            # iTunes拡張フィールド
+            episode_image_url=data.get('episode_image_url'),
+            season=data.get('season'),
+            episode_number=data.get('episode_number'),
+            episode_type=data.get('episode_type', 'full'),
+            itunes_summary=data.get('itunes_summary'),
+            itunes_subtitle=data.get('itunes_subtitle'),
+            itunes_keywords=data.get('itunes_keywords'),
+            itunes_explicit=data.get('itunes_explicit', 'no')
         )
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
-        return {
+        result = {
             'slug': self.slug,
             'title': self.title,
             'description': self.description,
@@ -76,6 +95,137 @@ class EpisodeMetadata:
             'spotify_url': self.spotify_url,
             'file_extension': self.file_extension
         }
+        
+        # iTunes拡張フィールド（値がある場合のみ追加）
+        if self.episode_image_url:
+            result['episode_image_url'] = self.episode_image_url
+        if self.season is not None:
+            result['season'] = self.season
+        if self.episode_number is not None:
+            result['episode_number'] = self.episode_number
+        if self.episode_type:
+            result['episode_type'] = self.episode_type
+        if self.itunes_summary:
+            result['itunes_summary'] = self.itunes_summary
+        if self.itunes_subtitle:
+            result['itunes_subtitle'] = self.itunes_subtitle
+        if self.itunes_keywords:
+            result['itunes_keywords'] = self.itunes_keywords
+        if self.itunes_explicit:
+            result['itunes_explicit'] = self.itunes_explicit
+            
+        return result
+    
+    @classmethod
+    def from_episode_directory(cls, directory_path: str, base_url: str, commit_sha: str = '') -> 'EpisodeMetadata':
+        """Create EpisodeMetadata from episode directory
+        
+        Args:
+            directory_path: Path to episode directory containing audio file and episode_data.json
+            base_url: Base URL for constructing file URLs
+            commit_sha: Git commit SHA for GUID generation
+        """
+        import os
+        import json
+        import glob
+        from mutagen import File as MutagenFile
+        
+        # ディレクトリ名からslugとpub_dateを推定
+        dir_name = os.path.basename(directory_path)
+        slug = dir_name
+        
+        # デフォルトのpub_date（YYYYMMDD形式から推定を試みる）
+        pub_date = datetime.now(timezone.utc)
+        if len(dir_name) >= 8:
+            try:
+                date_str = dir_name[:8]
+                pub_date = datetime.strptime(date_str, '%Y%m%d').replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+        
+        # 音声ファイルを検出
+        audio_files = glob.glob(os.path.join(directory_path, '*.mp3')) + \
+                     glob.glob(os.path.join(directory_path, '*.wav'))
+        
+        if not audio_files:
+            raise ValueError(f"No audio file found in {directory_path}")
+        
+        audio_file = audio_files[0]  # 最初の音声ファイルを使用
+        file_extension = os.path.splitext(audio_file)[1]
+        
+        # 音声ファイルのメタデータを取得
+        file_size_bytes = os.path.getsize(audio_file)
+        duration_seconds = 0
+        
+        try:
+            audio_metadata = MutagenFile(audio_file)
+            if audio_metadata and hasattr(audio_metadata.info, 'length'):
+                duration_seconds = int(audio_metadata.info.length)
+        except Exception:
+            pass
+        
+        # episode_data.jsonを読み込む
+        json_path = os.path.join(directory_path, 'episode_data.json')
+        episode_data = {}
+        
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    episode_data = json.load(f)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse episode_data.json: {e}")
+        
+        # 必須フィールドのデフォルト値
+        title = episode_data.get('title', slug.replace('-', ' ').title())
+        description = episode_data.get('description', f'Episode: {slug}')
+        
+        # pub_dateの処理
+        if 'pub_date' in episode_data:
+            try:
+                pub_date = datetime.fromisoformat(episode_data['pub_date'].replace('Z', '+00:00'))
+            except ValueError:
+                pass
+        
+        # S3パスの生成
+        year = pub_date.year
+        audio_filename = os.path.basename(audio_file)
+        s3_audio_key = f"podcast/{year}/{slug}/{audio_filename}"
+        audio_url = f"{base_url.rstrip('/')}/{s3_audio_key}"
+        
+        # エピソード画像URLの処理
+        episode_image_url = None
+        if 'episode_image' in episode_data:
+            image_filename = episode_data['episode_image']
+            image_path = os.path.join(directory_path, image_filename)
+            if os.path.exists(image_path):
+                s3_image_key = f"podcast/{year}/{slug}/{image_filename}"
+                episode_image_url = f"{base_url.rstrip('/')}/{s3_image_key}"
+        
+        # GUIDの生成
+        guid = episode_data.get('guid', f"{commit_sha}-{slug}" if commit_sha else f"episode-{slug}")
+        
+        # EpisodeMetadataオブジェクトを作成
+        return cls(
+            slug=slug,
+            title=title,
+            description=description,
+            pub_date=pub_date,
+            duration_seconds=episode_data.get('duration_seconds', duration_seconds),
+            file_size_bytes=file_size_bytes,
+            audio_url=audio_url,
+            guid=guid,
+            spotify_url=episode_data.get('spotify_url'),
+            file_extension=file_extension,
+            # iTunes拡張フィールド
+            episode_image_url=episode_image_url or episode_data.get('episode_image_url'),
+            season=episode_data.get('season'),
+            episode_number=episode_data.get('episode_number'),
+            episode_type=episode_data.get('episode_type', 'full'),
+            itunes_summary=episode_data.get('itunes_summary'),
+            itunes_subtitle=episode_data.get('itunes_subtitle'),
+            itunes_keywords=episode_data.get('itunes_keywords'),
+            itunes_explicit=episode_data.get('itunes_explicit', 'no')
+        )
 
 
 class StructuredLogger:
@@ -116,6 +266,70 @@ class RSSGenerator:
             'image_url': os.getenv('PODCAST_IMAGE_URL', f'{base_url}/podcast-cover.jpg')
         }
 
+    def collect_episode_directories(self, episodes_dir: str = 'episodes') -> List[EpisodeMetadata]:
+        """Collect episodes from directory structure
+        
+        Args:
+            episodes_dir: Path to the episodes directory
+            
+        Returns:
+            List of EpisodeMetadata objects from directories
+        """
+        import os
+        import glob
+        
+        self.logger.log_event('collecting_episode_directories_start', episodes_dir=episodes_dir)
+        
+        episodes = []
+        
+        if not os.path.exists(episodes_dir):
+            self.logger.log_event('episodes_directory_not_found', episodes_dir=episodes_dir)
+            return episodes
+        
+        # エピソードディレクトリをスキャン
+        for item in sorted(os.listdir(episodes_dir)):
+            item_path = os.path.join(episodes_dir, item)
+            
+            # ディレクトリの場合
+            if os.path.isdir(item_path):
+                try:
+                    # ディレクトリから EpisodeMetadata を作成
+                    episode = EpisodeMetadata.from_episode_directory(
+                        item_path, 
+                        self.base_url,
+                        os.getenv('GITHUB_SHA', '')
+                    )
+                    episodes.append(episode)
+                    
+                    self.logger.log_event(
+                        'episode_directory_processed',
+                        slug=episode.slug,
+                        title=episode.title
+                    )
+                    
+                except Exception as e:
+                    self.logger.log_event(
+                        'episode_directory_error',
+                        directory=item,
+                        error=str(e)
+                    )
+                    continue
+            
+            # 直接音声ファイルの場合（後方互換性）
+            elif item.endswith(('.mp3', '.wav')):
+                self.logger.log_event(
+                    'legacy_audio_file_found',
+                    file=item,
+                    message='Consider migrating to directory structure'
+                )
+        
+        self.logger.log_event(
+            'collecting_episode_directories_complete',
+            episode_count=len(episodes)
+        )
+        
+        return episodes
+    
     def collect_existing_episodes(self) -> List[EpisodeMetadata]:
         """Collect existing episode information from S3"""
         self.logger.log_event('collecting_episodes_start', bucket=self.bucket_name)
@@ -168,7 +382,12 @@ class RSSGenerator:
                             audio_url=f"{self.base_url}/{key}",
                             guid=metadata.get('guid', f'episode-{slug}'),
                             spotify_url=metadata.get('spotify_url'),
-                            file_extension=file_extension
+                            file_extension=file_extension,
+                            # iTunes拡張フィールド（S3メタデータから取得可能な範囲で）
+                            season=int(metadata.get('season', '0')) if metadata.get('season') else None,
+                            episode_number=int(metadata.get('episode_number', '0')) if metadata.get('episode_number') else None,
+                            episode_type=metadata.get('episode_type', 'full'),
+                            itunes_explicit=metadata.get('itunes_explicit', 'no')
                         )
                         
                         episodes.append(episode)
@@ -291,11 +510,35 @@ class RSSGenerator:
                     fe.podcast.itunes_duration(
                         self._seconds_to_duration(episode.duration_seconds)
                     )
-                fe.podcast.itunes_explicit('no')
-                fe.podcast.itunes_summary(episode.description)
+                
+                # エピソード固有のiTunesタグ
+                fe.podcast.itunes_explicit(episode.itunes_explicit or 'no')
+                fe.podcast.itunes_summary(episode.itunes_summary or episode.description)
+                
+                # 新しいiTunesタグ
+                if episode.itunes_subtitle:
+                    fe.podcast.itunes_subtitle(episode.itunes_subtitle)
+                
+                if episode.episode_image_url:
+                    fe.podcast.itunes_image(episode.episode_image_url)
+                
+                if episode.season is not None:
+                    fe.podcast.itunes_season(str(episode.season))
+                
+                if episode.episode_number is not None:
+                    fe.podcast.itunes_episode(str(episode.episode_number))
+                
+                if episode.episode_type and episode.episode_type != 'full':
+                    fe.podcast.itunes_episode_type(episode.episode_type)
+                
+                # iTunes keywords は feedgen がサポートしていないため、後でXML処理で追加
+                # TODO: RSS生成後にXMLを直接編集してkeywordsタグを追加
             
             # Generate RSS XML
             rss_xml = fg.rss_str(pretty=True).decode('utf-8')
+            
+            # Post-process RSS to add iTunes keywords (not supported by feedgen)
+            rss_xml = self._add_itunes_keywords(rss_xml, episodes)
             
             self.logger.log_event(
                 'rss_generation_complete',
@@ -312,6 +555,54 @@ class RSSGenerator:
                 error_type=type(e).__name__
             )
             raise
+    
+    def _add_itunes_keywords(self, rss_xml: str, episodes: List[EpisodeMetadata]) -> str:
+        """Add iTunes keywords to RSS XML (post-processing)
+        
+        Args:
+            rss_xml: Generated RSS XML string
+            episodes: List of episodes with keywords
+            
+        Returns:
+            Modified RSS XML with iTunes keywords
+        """
+        import re
+        
+        # Create mapping of GUIDs to keywords
+        guid_to_keywords = {}
+        for episode in episodes:
+            if episode.itunes_keywords:
+                keywords_str = ','.join(episode.itunes_keywords)
+                guid_to_keywords[episode.guid] = keywords_str
+        
+        if not guid_to_keywords:
+            return rss_xml
+        
+        # Process each item in the RSS
+        def add_keywords_to_item(match):
+            item_xml = match.group(0)
+            
+            # Extract GUID from this item
+            guid_match = re.search(r'<guid[^>]*>([^<]+)</guid>', item_xml)
+            if not guid_match:
+                return item_xml
+                
+            guid = guid_match.group(1)
+            if guid not in guid_to_keywords:
+                return item_xml
+            
+            keywords = guid_to_keywords[guid]
+            
+            # Insert keywords tag before </item>
+            keywords_tag = f'    <itunes:keywords>{keywords}</itunes:keywords>\n  '
+            item_xml = item_xml.replace('</item>', f'{keywords_tag}</item>')
+            
+            return item_xml
+        
+        # Apply to all items
+        rss_xml = re.sub(r'<item>.*?</item>', add_keywords_to_item, rss_xml, flags=re.DOTALL)
+        
+        return rss_xml
 
     def deploy_rss_atomic(self, rss_content: str) -> str:
         """Deploy RSS feed atomically to S3"""
@@ -463,11 +754,21 @@ def main():
     )
     parser.add_argument(
         '--episode-metadata',
-        help='JSON metadata for new episode (optional)'
+        help='JSON metadata for new episode (optional, for legacy mode)'
     )
     parser.add_argument(
         '--commit-sha',
         help='Git commit SHA for GUID generation'
+    )
+    parser.add_argument(
+        '--use-episode-directories',
+        action='store_true',
+        help='Use episode directory structure instead of S3-only episodes'
+    )
+    parser.add_argument(
+        '--episodes-dir',
+        default='episodes',
+        help='Path to episodes directory (default: episodes)'
     )
     
     args = parser.parse_args()
@@ -484,25 +785,34 @@ def main():
     rss_generator = RSSGenerator(s3_client, args.bucket, args.base_url)
     
     try:
-        # Collect existing episodes
-        existing_episodes = rss_generator.collect_existing_episodes()
-        
-        # Parse new episode metadata if provided
-        new_episode = None
-        if args.episode_metadata:
-            try:
-                episode_data = json.loads(args.episode_metadata)
-                new_episode = EpisodeMetadata.from_dict(episode_data)
-                
-                # Update episode metadata in S3
-                rss_generator.update_episode_metadata(new_episode)
-                
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.error(f"Invalid episode metadata: {e}")
-                sys.exit(1)
+        # Collect episodes based on mode
+        if args.use_episode_directories:
+            # Use directory-based episode collection
+            episodes = rss_generator.collect_episode_directories(args.episodes_dir)
+        else:
+            # Use legacy S3-based episode collection
+            episodes = rss_generator.collect_existing_episodes()
+            
+            # Parse new episode metadata if provided (legacy mode)
+            new_episode = None
+            if args.episode_metadata:
+                try:
+                    episode_data = json.loads(args.episode_metadata)
+                    new_episode = EpisodeMetadata.from_dict(episode_data)
+                    
+                    # Update episode metadata in S3
+                    rss_generator.update_episode_metadata(new_episode)
+                    
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.error(f"Invalid episode metadata: {e}")
+                    sys.exit(1)
+            
+            # Add new episode to list for legacy mode
+            if new_episode:
+                episodes.insert(0, new_episode)
         
         # Generate RSS feed
-        rss_content = rss_generator.generate_rss(existing_episodes, new_episode)
+        rss_content = rss_generator.generate_rss(episodes)
         
         # Deploy atomically
         rss_url = rss_generator.deploy_rss_atomic(rss_content)

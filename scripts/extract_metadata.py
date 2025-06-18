@@ -31,6 +31,144 @@ class MetadataExtractor:
         self.base_url = base_url.rstrip('/')
         self.commit_sha = commit_sha
 
+    def extract_from_directory(self, episode_dir: str) -> Dict[str, Any]:
+        """Extract metadata from episode directory containing audio file and episode_data.json"""
+        
+        if not os.path.exists(episode_dir):
+            raise FileNotFoundError(f"Episode directory not found: {episode_dir}")
+        
+        if not os.path.isdir(episode_dir):
+            raise ValueError(f"Path is not a directory: {episode_dir}")
+        
+        # Get directory name as slug
+        slug = os.path.basename(episode_dir)
+        
+        # Validate slug format
+        if not self._validate_slug_format(slug):
+            raise ValueError(f"Invalid slug format: {slug}. Expected: YYYYMMDD-title-kebab")
+        
+        # Extract date from slug
+        try:
+            date_str = slug[:8]
+            pub_date = datetime.strptime(date_str, '%Y%m%d').replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise ValueError(f"Invalid date in slug: {slug[:8]}")
+        
+        # Find audio file in directory
+        audio_files = []
+        for filename in os.listdir(episode_dir):
+            if filename.endswith(('.mp3', '.wav')):
+                audio_files.append(os.path.join(episode_dir, filename))
+        
+        if not audio_files:
+            raise ValueError(f"No audio files (MP3/WAV) found in directory: {episode_dir}")
+        
+        if len(audio_files) > 1:
+            logger.warning(f"Multiple audio files found, using: {audio_files[0]}")
+        
+        audio_path = audio_files[0]
+        file_extension = os.path.splitext(audio_path)[1]
+        
+        # Load episode_data.json if it exists
+        episode_data_path = os.path.join(episode_dir, 'episode_data.json')
+        episode_data = {}
+        
+        if os.path.exists(episode_data_path):
+            try:
+                with open(episode_data_path, 'r', encoding='utf-8') as f:
+                    episode_data = json.load(f)
+                logger.info(f"Loaded episode data from: {episode_data_path}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse episode_data.json: {e}")
+        
+        # Get file information
+        file_size = os.path.getsize(audio_path)
+        
+        # Extract audio metadata
+        duration_seconds = 0
+        try:
+            audio_file = mutagen.File(audio_path)
+            if audio_file and audio_file.info:
+                duration_seconds = int(audio_file.info.length)
+        except Exception as e:
+            logger.warning(f"Could not read audio metadata: {e}")
+        
+        # Use episode_data.json values or fall back to defaults
+        title = episode_data.get('title', self._generate_title_from_slug(slug))
+        description = episode_data.get('description', f'Episode: {title}')
+        
+        # Override duration if specified in episode_data.json
+        if 'duration_seconds' in episode_data:
+            duration_seconds = episode_data['duration_seconds']
+        
+        # Override pub_date if specified in episode_data.json
+        if 'pub_date' in episode_data:
+            try:
+                pub_date = datetime.fromisoformat(episode_data['pub_date'].replace('Z', '+00:00'))
+            except ValueError:
+                logger.warning(f"Invalid pub_date in episode_data.json, using slug date")
+        
+        # Generate URLs and paths
+        year = pub_date.year
+        s3_base_path = f"podcast/{year}/{slug}"
+        audio_filename = os.path.basename(audio_path)
+        s3_audio_key = f"{s3_base_path}/{audio_filename}"
+        audio_url = f"{self.base_url}/{s3_audio_key}"
+        
+        # Generate GUID
+        guid = episode_data.get('guid', f"repo-{self.commit_sha[:7]}-{slug}")
+        
+        # Find episode image if it exists
+        episode_image_url = None
+        if 'episode_image' in episode_data:
+            image_filename = episode_data['episode_image']
+            image_path = os.path.join(episode_dir, image_filename)
+            if os.path.exists(image_path):
+                s3_image_key = f"{s3_base_path}/{image_filename}"
+                episode_image_url = f"{self.base_url}/{s3_image_key}"
+        
+        # Prepare complete metadata
+        metadata = {
+            'slug': slug,
+            'title': title,
+            'description': description,
+            'pub_date': pub_date.isoformat(),
+            'duration_seconds': duration_seconds,
+            'file_size_bytes': file_size,
+            'audio_url': audio_url,
+            'guid': guid,
+            's3_audio_key': s3_audio_key,
+            's3_base_path': s3_base_path,
+            'year': year,
+            'file_extension': file_extension,
+            'episode_directory': episode_dir,
+            'audio_filename': audio_filename
+        }
+        
+        # Add iTunes fields from episode_data.json
+        itunes_fields = [
+            'episode_image_url', 'season', 'episode_number', 'episode_type',
+            'itunes_summary', 'itunes_subtitle', 'itunes_keywords', 'itunes_explicit'
+        ]
+        
+        for field in itunes_fields:
+            if field in episode_data:
+                metadata[field] = episode_data[field]
+        
+        # Override episode_image_url if we found a local image
+        if episode_image_url:
+            metadata['episode_image_url'] = episode_image_url
+        
+        logger.info(f"Extracted metadata for episode directory: {slug}")
+        logger.info(f"Title: {title}")
+        logger.info(f"Duration: {duration_seconds}s")
+        logger.info(f"File size: {file_size} bytes")
+        logger.info(f"GUID: {guid}")
+        if episode_image_url:
+            logger.info(f"Episode image: {episode_image_url}")
+        
+        return metadata
+
     def extract_from_file(self, audio_path: str) -> Dict[str, Any]:
         """Extract complete metadata from audio file (MP3/WAV)"""
         
@@ -206,13 +344,20 @@ class MetadataExtractor:
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description='Extract metadata from audio episode file (MP3/WAV)'
+        description='Extract metadata from audio episode file or episode directory'
     )
-    parser.add_argument(
+    
+    # Create mutually exclusive group for file vs directory mode
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
         '--audio-file',
-        required=True,
         help='Path to audio file (MP3 or WAV)'
     )
+    input_group.add_argument(
+        '--episode-directory',
+        help='Path to episode directory containing audio file and episode_data.json'
+    )
+    
     parser.add_argument(
         '--base-url',
         required=True,
@@ -230,26 +375,44 @@ def main():
         # Initialize extractor
         extractor = MetadataExtractor(args.base_url, args.commit_sha)
         
-        # Extract metadata
-        metadata = extractor.extract_from_file(args.audio_file)
-        
-        # Output for GitHub Actions
-        print(f"::set-output name=slug::{metadata['slug']}")
-        print(f"::set-output name=title::{metadata['title']}")
-        print(f"::set-output name=guid::{metadata['guid']}")
-        print(f"::set-output name=metadata::{json.dumps(metadata)}")
-        print(f"::set-output name=audio-path::{args.audio_file}")
-        print(f"::set-output name=s3-key::{metadata['s3_key']}")
-        print(f"::set-output name=commit-sha::{args.commit_sha}")
+        # Extract metadata based on mode
+        if args.audio_file:
+            # Single file mode (legacy)
+            metadata = extractor.extract_from_file(args.audio_file)
+            
+            # Output for GitHub Actions (legacy format)
+            print(f"::set-output name=slug::{metadata['slug']}")
+            print(f"::set-output name=title::{metadata['title']}")
+            print(f"::set-output name=guid::{metadata['guid']}")
+            print(f"::set-output name=metadata::{json.dumps(metadata)}")
+            print(f"::set-output name=audio-path::{args.audio_file}")
+            print(f"::set-output name=s3-key::{metadata['s3_key']}")
+            print(f"::set-output name=commit-sha::{args.commit_sha}")
+            
+        elif args.episode_directory:
+            # Episode directory mode (new)
+            metadata = extractor.extract_from_directory(args.episode_directory)
+            
+            # Output for GitHub Actions (new format)
+            print(f"::set-output name=slug::{metadata['slug']}")
+            print(f"::set-output name=title::{metadata['title']}")
+            print(f"::set-output name=guid::{metadata['guid']}")
+            print(f"::set-output name=metadata::{json.dumps(metadata)}")
+            print(f"::set-output name=episode-directory::{metadata['episode_directory']}")
+            print(f"::set-output name=s3-base-path::{metadata['s3_base_path']}")
+            print(f"::set-output name=commit-sha::{args.commit_sha}")
         
         # Log structured output
         logger.info(json.dumps({
             'event_type': 'metadata_extraction_complete',
+            'mode': 'directory' if args.episode_directory else 'file',
             'episode_slug': metadata['slug'],
             'episode_title': metadata['title'],
             'episode_guid': metadata['guid'],
             'file_size_bytes': metadata['file_size_bytes'],
-            'duration_seconds': metadata['duration_seconds']
+            'duration_seconds': metadata['duration_seconds'],
+            'itunes_fields': {k: v for k, v in metadata.items() 
+                            if k.startswith('itunes_') or k in ['season', 'episode_number', 'episode_type']}
         }))
         
     except Exception as e:

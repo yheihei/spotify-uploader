@@ -38,6 +38,211 @@ class TestEpisodeMetadata:
         assert episode.guid == "repo-abc1234-20250618-test-episode"
         assert episode.spotify_url is None
     
+    def test_episode_metadata_with_itunes_fields(self):
+        """Test EpisodeMetadata with iTunes extension fields."""
+        data = {
+            "slug": "20250618-itunes-test",
+            "title": "iTunes Test Episode",
+            "description": "Basic description",
+            "pub_date": "2025-06-18T09:00:00Z",
+            "duration_seconds": 240,
+            "file_size_bytes": 5000000,
+            "audio_url": "https://cdn.example.com/podcast/2025/20250618-itunes-test.mp3",
+            "guid": "itunes-test-guid",
+            # iTunes fields
+            "episode_image_url": "https://cdn.example.com/images/episode1.jpg",
+            "season": 2,
+            "episode_number": 5,
+            "episode_type": "bonus",
+            "itunes_summary": "Detailed iTunes summary with HTML",
+            "itunes_subtitle": "iTunes subtitle",
+            "itunes_keywords": ["tech", "podcast", "coding"],
+            "itunes_explicit": "yes"
+        }
+        
+        episode = EpisodeMetadata.from_dict(data)
+        
+        # iTunes fields assertions
+        assert episode.episode_image_url == "https://cdn.example.com/images/episode1.jpg"
+        assert episode.season == 2
+        assert episode.episode_number == 5
+        assert episode.episode_type == "bonus"
+        assert episode.itunes_summary == "Detailed iTunes summary with HTML"
+        assert episode.itunes_subtitle == "iTunes subtitle"
+        assert episode.itunes_keywords == ["tech", "podcast", "coding"]
+        assert episode.itunes_explicit == "yes"
+    
+    def test_episode_metadata_from_directory(self):
+        """Test creating EpisodeMetadata from episode directory."""
+        with patch('os.path.exists') as mock_exists, \
+             patch('os.path.getsize') as mock_getsize, \
+             patch('glob.glob') as mock_glob, \
+             patch('builtins.open', create=True) as mock_open, \
+             patch('os.path.basename') as mock_basename:
+            
+            # Mock directory structure
+            directory_path = "episodes/20250618-test-episode"
+            mock_basename.return_value = "20250618-test-episode"
+            mock_glob.return_value = ["episodes/20250618-test-episode/audio.mp3"]
+            mock_getsize.return_value = 5000000
+            mock_exists.return_value = True
+            
+            # Mock JSON file content
+            json_content = {
+                "title": "Test Episode from Directory",
+                "description": "Episode loaded from directory structure",
+                "season": 1,
+                "episode_number": 1,
+                "itunes_keywords": ["test", "directory"]
+            }
+            mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(json_content)
+            
+            # Mock mutagen
+            with patch('mutagen.File') as mock_mutagen:
+                mock_audio = Mock()
+                mock_audio.info.length = 240
+                mock_mutagen.return_value = mock_audio
+                
+                episode = EpisodeMetadata.from_episode_directory(
+                    directory_path, 
+                    "https://cdn.example.com",
+                    "abc123"
+                )
+                
+                assert episode.slug == "20250618-test-episode"
+                assert episode.title == "Test Episode from Directory"
+                assert episode.description == "Episode loaded from directory structure"
+                assert episode.season == 1
+                assert episode.episode_number == 1
+                assert episode.itunes_keywords == ["test", "directory"]
+                assert episode.guid == "abc123-20250618-test-episode"
+    
+    def test_collect_episode_directories(self):
+        """Test collecting episodes from directory structure."""
+        with patch('os.path.exists') as mock_exists, \
+             patch('os.listdir') as mock_listdir, \
+             patch('os.path.isdir') as mock_isdir:
+            
+            # Mock episode directories
+            mock_exists.return_value = True
+            mock_listdir.return_value = ['20250618-test-episode', '20250619-another-episode', 'README.md']
+            mock_isdir.side_effect = lambda path: not path.endswith('README.md')
+            
+            # Mock EpisodeMetadata.from_episode_directory
+            with patch.object(EpisodeMetadata, 'from_episode_directory') as mock_from_dir:
+                mock_episode_1 = EpisodeMetadata(
+                    slug='20250618-test-episode',
+                    title='Test Episode 1',
+                    description='Test description 1',
+                    pub_date=datetime(2025, 6, 18, tzinfo=timezone.utc),
+                    duration_seconds=300,
+                    file_size_bytes=5000000,
+                    audio_url='https://example.com/audio1.mp3',
+                    guid='test-guid-1'
+                )
+                
+                mock_episode_2 = EpisodeMetadata(
+                    slug='20250619-another-episode',
+                    title='Test Episode 2',
+                    description='Test description 2',
+                    pub_date=datetime(2025, 6, 19, tzinfo=timezone.utc),
+                    duration_seconds=240,
+                    file_size_bytes=4000000,
+                    audio_url='https://example.com/audio2.mp3',
+                    guid='test-guid-2'
+                )
+                
+                mock_from_dir.side_effect = [mock_episode_1, mock_episode_2]
+                
+                # Test the collection
+                mock_s3 = Mock()
+                generator = RSSGenerator(mock_s3, 'test-bucket', 'https://example.com')
+                
+                episodes = generator.collect_episode_directories('episodes')
+                
+                assert len(episodes) == 2
+                assert episodes[0].slug == '20250618-test-episode'
+                assert episodes[1].slug == '20250619-another-episode'
+                
+                # Verify from_episode_directory was called for each directory
+                assert mock_from_dir.call_count == 2
+    
+    def test_rss_generation_with_itunes_fields(self):
+        """Test RSS generation includes iTunes extension fields."""
+        # Create episode with iTunes fields
+        episode = EpisodeMetadata(
+            slug='20250618-itunes-test',
+            title='iTunes Test Episode',
+            description='Test episode with iTunes fields',
+            pub_date=datetime(2025, 6, 18, tzinfo=timezone.utc),
+            duration_seconds=300,
+            file_size_bytes=5000000,
+            audio_url='https://example.com/test.mp3',
+            guid='itunes-test-guid',
+            # iTunes fields
+            season=2,
+            episode_number=5,
+            episode_type='bonus',
+            itunes_summary='Detailed iTunes summary',
+            itunes_subtitle='iTunes subtitle',
+            itunes_keywords=['podcast', 'test', 'itunes'],
+            itunes_explicit='yes',
+            episode_image_url='https://example.com/episode-image.jpg'
+        )
+        
+        # Mock S3 client
+        mock_s3 = Mock()
+        generator = RSSGenerator(mock_s3, 'test-bucket', 'https://example.com')
+        
+        # Generate RSS
+        rss_xml = generator.generate_rss([episode])
+        
+        # Check for iTunes tags
+        assert 'itunes:season>2</itunes:season>' in rss_xml
+        assert 'itunes:episode>5</itunes:episode>' in rss_xml
+        assert 'itunes:episodeType>bonus</itunes:episodeType>' in rss_xml
+        assert 'itunes:subtitle>iTunes subtitle</itunes:subtitle>' in rss_xml
+        assert 'itunes:summary>Detailed iTunes summary</itunes:summary>' in rss_xml
+        assert 'itunes:explicit>yes</itunes:explicit>' in rss_xml
+        assert 'itunes:image href="https://example.com/episode-image.jpg"' in rss_xml
+        assert 'itunes:keywords>podcast,test,itunes</itunes:keywords>' in rss_xml
+    
+    def test_itunes_keywords_post_processing(self):
+        """Test iTunes keywords post-processing functionality."""
+        episode1 = EpisodeMetadata(
+            slug='test1', title='Test 1', description='Desc 1',
+            pub_date=datetime(2025, 6, 18, tzinfo=timezone.utc),
+            duration_seconds=300, file_size_bytes=5000000,
+            audio_url='https://example.com/test1.mp3', guid='guid1',
+            itunes_keywords=['tech', 'podcast']
+        )
+        
+        episode2 = EpisodeMetadata(
+            slug='test2', title='Test 2', description='Desc 2',
+            pub_date=datetime(2025, 6, 19, tzinfo=timezone.utc),
+            duration_seconds=240, file_size_bytes=4000000,
+            audio_url='https://example.com/test2.mp3', guid='guid2',
+            itunes_keywords=['coding', 'programming']
+        )
+        
+        mock_s3 = Mock()
+        generator = RSSGenerator(mock_s3, 'test-bucket', 'https://example.com')
+        
+        # Test the keywords post-processing method directly
+        test_rss = '''<item>
+    <guid>guid1</guid>
+    <title>Test 1</title>
+</item>
+<item>
+    <guid>guid2</guid>
+    <title>Test 2</title>
+</item>'''
+        
+        processed_rss = generator._add_itunes_keywords(test_rss, [episode1, episode2])
+        
+        assert 'itunes:keywords>tech,podcast</itunes:keywords>' in processed_rss
+        assert 'itunes:keywords>coding,programming</itunes:keywords>' in processed_rss
+    
     def test_episode_metadata_to_dict(self, sample_episode_metadata):
         """Test converting EpisodeMetadata to dictionary."""
         episode = EpisodeMetadata.from_dict(sample_episode_metadata)
@@ -319,7 +524,9 @@ class TestMainFunction:
                 bucket='test-bucket',
                 base_url='https://cdn.test.com',
                 episode_metadata=json.dumps(sample_episode_metadata),
-                commit_sha='abc1234'
+                commit_sha='abc1234',
+                use_episode_directories=False,
+                episodes_dir='episodes'
             )
             
             with patch('build_rss.print') as mock_print:
@@ -340,7 +547,9 @@ class TestMainFunction:
                 bucket='test-bucket',
                 base_url='https://cdn.test.com',
                 episode_metadata=None,
-                commit_sha='abc1234'
+                commit_sha='abc1234',
+                use_episode_directories=False,
+                episodes_dir='episodes'
             )
             
             with patch('build_rss.sys.exit') as mock_exit:
@@ -358,7 +567,9 @@ class TestMainFunction:
                 bucket='test-bucket',
                 base_url='https://cdn.test.com',
                 episode_metadata='invalid json',
-                commit_sha='abc1234'
+                commit_sha='abc1234',
+                use_episode_directories=False,
+                episodes_dir='episodes'
             )
             
             with patch('build_rss.sys.exit') as mock_exit:

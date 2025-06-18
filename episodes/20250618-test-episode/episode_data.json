@@ -1,0 +1,16 @@
+{
+  "title": "RSSカスタマイズ機能のテスト",
+  "description": "このエピソードでは、RSSフィードのカスタマイズ機能をテストします。",
+  "itunes_summary": "<p>このエピソードでは、<strong>RSSフィードのカスタマイズ機能</strong>をテストします。</p><p>新しく追加されたiTunesタグの動作確認を行います。</p>",
+  "itunes_subtitle": "iTunes拡張機能のテスト",
+  "itunes_keywords": ["podcast", "rss", "itunes", "spotify", "automation"],
+  "itunes_explicit": "no",
+  "season": 1,
+  "episode_number": 1,
+  "episode_type": "full",
+  "pub_date": "2025-06-18T09:00:00Z",
+  "duration_seconds": 300,
+  "custom_metadata": {
+    "test_field": "test_value"
+  }
+}

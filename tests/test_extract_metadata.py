@@ -463,3 +463,167 @@ class TestIntegration:
             assert pub_date.month == 6
             assert pub_date.day == 18
             assert pub_date.tzinfo == timezone.utc
+
+
+class TestEpisodeDirectoryExtraction:
+    """Test cases for episode directory extraction functionality."""
+    
+    @pytest.fixture
+    def extractor(self):
+        """Create MetadataExtractor instance for testing."""
+        return MetadataExtractor(
+            base_url="https://cdn.test.com",
+            commit_sha="abc1234567890"
+        )
+    
+    def test_extract_from_directory_basic(self, extractor):
+        """Test basic directory extraction functionality."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create episode directory
+            episode_dir = os.path.join(temp_dir, '20250618-test-episode')
+            os.makedirs(episode_dir)
+            
+            # Create dummy audio file
+            audio_file = os.path.join(episode_dir, 'audio.mp3')
+            with open(audio_file, 'w') as f:
+                f.write('dummy audio content')
+            
+            # Create episode_data.json
+            episode_data = {
+                'title': 'Test Episode Title',
+                'description': 'Test episode description',
+                'season': 1,
+                'episode_number': 5,
+                'itunes_keywords': ['test', 'episode']
+            }
+            
+            json_file = os.path.join(episode_dir, 'episode_data.json')
+            with open(json_file, 'w') as f:
+                json.dump(episode_data, f)
+            
+            # Test extraction
+            with patch('mutagen.File') as mock_mutagen:
+                mock_audio = Mock()
+                mock_audio.info.length = 300
+                mock_mutagen.return_value = mock_audio
+                
+                metadata = extractor.extract_from_directory(episode_dir)
+                
+                assert metadata['slug'] == '20250618-test-episode'
+                assert metadata['title'] == 'Test Episode Title'
+                assert metadata['description'] == 'Test episode description'
+                assert metadata['season'] == 1
+                assert metadata['episode_number'] == 5
+                assert metadata['itunes_keywords'] == ['test', 'episode']
+                assert metadata['duration_seconds'] == 300
+                assert metadata['guid'] == 'repo-abc1234-20250618-test-episode'
+                assert metadata['s3_base_path'] == 'podcast/2025/20250618-test-episode'
+                assert metadata['audio_url'] == 'https://cdn.test.com/podcast/2025/20250618-test-episode/audio.mp3'
+    
+    def test_extract_from_directory_with_image(self, extractor):
+        """Test directory extraction with episode image."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create episode directory
+            episode_dir = os.path.join(temp_dir, '20250618-test-episode')
+            os.makedirs(episode_dir)
+            
+            # Create dummy files
+            audio_file = os.path.join(episode_dir, 'audio.mp3')
+            image_file = os.path.join(episode_dir, 'cover.jpg')
+            
+            with open(audio_file, 'w') as f:
+                f.write('dummy audio')
+            with open(image_file, 'w') as f:
+                f.write('dummy image')
+            
+            # Create episode_data.json with image reference
+            episode_data = {
+                'title': 'Episode with Image',
+                'description': 'Episode that has a custom image',
+                'episode_image': 'cover.jpg'
+            }
+            
+            json_file = os.path.join(episode_dir, 'episode_data.json')
+            with open(json_file, 'w') as f:
+                json.dump(episode_data, f)
+            
+            # Test extraction
+            with patch('mutagen.File'):
+                metadata = extractor.extract_from_directory(episode_dir)
+                
+                assert metadata['episode_image_url'] == 'https://cdn.test.com/podcast/2025/20250618-test-episode/cover.jpg'
+    
+    def test_extract_from_directory_no_json(self, extractor):
+        """Test directory extraction without episode_data.json (fallback behavior)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create episode directory
+            episode_dir = os.path.join(temp_dir, '20250618-fallback-test')
+            os.makedirs(episode_dir)
+            
+            # Create only audio file, no JSON
+            audio_file = os.path.join(episode_dir, 'audio.wav')
+            with open(audio_file, 'w') as f:
+                f.write('dummy audio content')
+            
+            # Test extraction
+            with patch('mutagen.File') as mock_mutagen:
+                mock_audio = Mock()
+                mock_audio.info.length = 180
+                mock_mutagen.return_value = mock_audio
+                
+                metadata = extractor.extract_from_directory(episode_dir)
+                
+                # Should generate fallback values
+                assert metadata['slug'] == '20250618-fallback-test'
+                assert metadata['title'] == 'Fallback Test'  # Generated from slug (date prefix removed)
+                assert metadata['description'] == 'Episode: Fallback Test'
+                assert metadata['duration_seconds'] == 180
+                assert metadata['file_extension'] == '.wav'
+                assert metadata['audio_url'] == 'https://cdn.test.com/podcast/2025/20250618-fallback-test/audio.wav'
+    
+    def test_extract_from_directory_invalid_slug(self, extractor):
+        """Test directory extraction with invalid slug format."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create directory with invalid slug
+            episode_dir = os.path.join(temp_dir, 'invalid-slug-format')
+            os.makedirs(episode_dir)
+            
+            with pytest.raises(ValueError, match="Invalid slug format"):
+                extractor.extract_from_directory(episode_dir)
+    
+    def test_extract_from_directory_no_audio_files(self, extractor):
+        """Test directory extraction with no audio files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create episode directory
+            episode_dir = os.path.join(temp_dir, '20250618-no-audio')
+            os.makedirs(episode_dir)
+            
+            # Create only non-audio files
+            with open(os.path.join(episode_dir, 'readme.txt'), 'w') as f:
+                f.write('readme')
+            
+            with pytest.raises(ValueError, match="No audio files"):
+                extractor.extract_from_directory(episode_dir)
+    
+    def test_extract_from_directory_invalid_json(self, extractor):
+        """Test directory extraction with invalid JSON file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create episode directory
+            episode_dir = os.path.join(temp_dir, '20250618-bad-json')
+            os.makedirs(episode_dir)
+            
+            # Create audio file
+            with open(os.path.join(episode_dir, 'audio.mp3'), 'w') as f:
+                f.write('dummy audio')
+            
+            # Create invalid JSON file
+            json_file = os.path.join(episode_dir, 'episode_data.json')
+            with open(json_file, 'w') as f:
+                f.write('{ invalid json content }')
+            
+            with patch('mutagen.File'):
+                # Should not raise exception, should use fallback values
+                metadata = extractor.extract_from_directory(episode_dir)
+                
+                # Should use generated title since JSON parsing failed
+                assert metadata['title'] == 'Bad Json'

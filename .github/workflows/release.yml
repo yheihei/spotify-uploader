@@ -3,11 +3,14 @@ name: Podcast Release Automation
 on:
   push:
     branches: [main]
-    paths: ['episodes/**/*.mp3', 'episodes/**/*.wav']
+    paths: 
+      - 'episodes/**/*.mp3'
+      - 'episodes/**/*.wav'
+      - 'episodes/**/episode_data.json'
   workflow_dispatch:
     inputs:
-      episode_path:
-        description: '音声ファイルのパス (episodes/から始まる相対パス, MP3またはWAV)'
+      episode_directory:
+        description: 'エピソードディレクトリのパス (e.g., episodes/20250618-test-episode)'
         required: true
         type: string
       force_republish:
@@ -99,8 +102,8 @@ jobs:
       episode-title: ${{ steps.extract.outputs.title }}
       episode-guid: ${{ steps.extract.outputs.guid }}
       episode-metadata: ${{ steps.extract.outputs.metadata }}
-      audio-path: ${{ steps.extract.outputs.audio-path }}
-      s3-key: ${{ steps.extract.outputs.s3-key }}
+      episode-directory: ${{ steps.extract.outputs.episode-directory }}
+      s3-base-path: ${{ steps.extract.outputs.s3-base-path }}
       commit-sha: ${{ steps.extract.outputs.commit-sha }}
       
     steps:
@@ -119,26 +122,39 @@ jobs:
         run: |
           pip install -r requirements.txt
           
-      - name: Detect changed audio files
+      - name: Detect changed episode directories
         id: detect
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "audio_files=${{ github.event.inputs.episode_path }}" >> $GITHUB_OUTPUT
+            episode_dir="${{ github.event.inputs.episode_directory }}"
+            echo "episode_directory=$episode_dir" >> $GITHUB_OUTPUT
           else
-            # Git diffで変更された音声ファイルを検出
-            audio_files=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep 'episodes/.*\.(mp3|wav)$' || echo "")
-            if [ -z "$audio_files" ]; then
-              echo "No audio files (MP3/WAV) found in the diff" >&2
+            # Git diffで変更されたファイルから対応するエピソードディレクトリを検出
+            changed_files=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }})
+            
+            # episodes/下の変更されたファイルからディレクトリを抽出
+            episode_dirs=$(echo "$changed_files" | grep 'episodes/' | cut -d'/' -f1-2 | sort | uniq)
+            
+            if [ -z "$episode_dirs" ]; then
+              echo "No episode directories found in the diff" >&2
               exit 1
             fi
-            echo "audio_files=$audio_files" >> $GITHUB_OUTPUT
+            
+            # 複数のディレクトリが変更された場合は最初のものを使用
+            first_dir=$(echo "$episode_dirs" | head -n1)
+            echo "episode_directory=$first_dir" >> $GITHUB_OUTPUT
+            
+            if [ $(echo "$episode_dirs" | wc -l) -gt 1 ]; then
+              echo "Multiple episode directories detected. Processing: $first_dir"
+              echo "Other directories: $(echo "$episode_dirs" | tail -n+2)"
+            fi
           fi
           
       - name: Extract episode metadata
         id: extract
         run: |
           python scripts/extract_metadata.py \
-            --audio-file "${{ steps.detect.outputs.audio_files }}" \
+            --episode-directory "${{ steps.detect.outputs.episode_directory }}" \
             --base-url "${{ env.BASE_URL }}" \
             --commit-sha "${{ github.sha }}"
             
@@ -148,13 +164,15 @@ jobs:
             --metadata '${{ steps.extract.outputs.metadata }}'
 
   upload:
-    name: Upload Audio to S3
+    name: Upload Episode Directory to S3
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       audio-url: ${{ steps.upload.outputs.audio-url }}
+      episode-image-url: ${{ steps.upload.outputs.episode-image-url }}
       upload-duration: ${{ steps.upload.outputs.duration }}
+      total-files: ${{ steps.upload.outputs.total-files }}
       
     steps:
       - name: Checkout repository
@@ -176,14 +194,15 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           
-      - name: Upload Audio to S3
+      - name: Upload Episode Directory to S3
         id: upload
         run: |
           python scripts/upload_s3.py \
-            --audio-file "${{ needs.setup.outputs.audio-path }}" \
-            --s3-key "${{ needs.setup.outputs.s3-key }}" \
+            --episode-dir "${{ needs.setup.outputs.episode-directory }}" \
+            --s3-base-path "${{ needs.setup.outputs.s3-base-path }}" \
             --bucket "${{ env.AWS_S3_BUCKET }}" \
-            --max-retries "${{ env.MAX_RETRY_ATTEMPTS }}"
+            --max-retries "${{ env.MAX_RETRY_ATTEMPTS }}" \
+            --metadata '${{ needs.setup.outputs.episode-metadata }}'
 
   rss-deploy:
     name: Generate and Deploy RSS Feed
@@ -220,7 +239,7 @@ jobs:
           python scripts/build_rss.py \
             --bucket "${{ env.AWS_S3_BUCKET }}" \
             --base-url "${{ env.BASE_URL }}" \
-            --episode-metadata '${{ needs.setup.outputs.episode-metadata }}' \
+            --use-episode-directories \
             --commit-sha "${{ needs.setup.outputs.commit-sha }}"
 
   verify:

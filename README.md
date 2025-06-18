@@ -49,20 +49,48 @@ BASE_URL=https://cdn.yourpodcast.com
 
 ### 2. エピソード配信
 
+#### 🆕 推奨方法：エピソードディレクトリ構造
+
+豊富なメタデータとiTunes拡張フィールドをサポートする新しい構造：
+
+1. `episodes/{YYYYMMDD-title-kebab}/` ディレクトリを作成
+2. 音声ファイル（MP3またはWAV）を配置
+3. `episode_data.json` でエピソード詳細を設定
+4. エピソード画像（オプション）を配置
+5. mainブランチにcommit & push
+
+```bash
+# エピソードディレクトリの例
+episodes/20250618-automation-pipeline/
+├── episode.mp3                    # 音声ファイル
+├── cover.jpg                      # エピソード画像（オプション）
+└── episode_data.json              # メタデータ
+
+# episode_data.json の例
+{
+  "title": "ポッドキャスト自動化パイプラインの構築",
+  "description": "GitHub ActionsとAWSを使用した完全自動化システムの解説",
+  "season": 2,
+  "episode_number": 15,
+  "episode_type": "full",
+  "itunes_summary": "技術的な詳細と実装のポイントを包括的に解説します",
+  "itunes_subtitle": "自動化システム構築ガイド", 
+  "itunes_keywords": ["automation", "github-actions", "aws", "podcast"],
+  "itunes_explicit": "no",
+  "episode_image": "cover.jpg"
+}
+```
+
+#### 従来方法：シンプルファイル配置（後方互換性あり）
+
 1. 音声ファイル（MP3またはWAV）を `episodes/` ディレクトリに配置
 2. ファイル名を `YYYYMMDD-title-kebab.mp3` または `YYYYMMDD-title-kebab.wav` 形式で命名
 3. mainブランチにcommit & push
-4. 自動配信処理が開始されます！
 
 ```bash
-# MP3の例
+# 従来方法の例
 git add episodes/20250618-automation-pipeline.mp3
 git commit -m "Add new episode: automation pipeline"
-git push origin main
-
-# WAVの例  
-git add episodes/20250618-high-quality-interview.wav
-git commit -m "Add new episode: high quality interview"
 git push origin main
 ```
 
@@ -84,10 +112,40 @@ git push origin main
 │   ├── generate_summary.py # サマリー生成
 │   └── generate_summary.py # サマリー生成
 ├── episodes/
-│   └── [音声ファイル]       # エピソードファイル（MP3/WAV）
+│   ├── 20250618-episode-title/     # エピソードディレクトリ（推奨）
+│   │   ├── episode.mp3             # 音声ファイル
+│   │   ├── cover.jpg               # エピソード画像（オプション）
+│   │   └── episode_data.json       # エピソードメタデータ
+│   └── [音声ファイル.mp3/.wav]      # 従来方式（後方互換性）
 ├── requirements.txt        # Python依存関係
 └── CLAUDE.md              # AI開発ガイド
 ```
+
+## 📊 エピソードメタデータ設定
+
+### episode_data.json フィールド
+
+| フィールド | 型 | 必須 | 説明 |
+|----------|---|-----|-----|
+| `title` | string | ○ | エピソードタイトル |
+| `description` | string | ○ | エピソード説明 |
+| `season` | number | - | シーズン番号 |
+| `episode_number` | number | - | エピソード番号 |
+| `episode_type` | string | - | エピソードタイプ（`full`/`trailer`/`bonus`） |
+| `itunes_summary` | string | - | iTunes詳細説明（HTML可） |
+| `itunes_subtitle` | string | - | iTunes短縮説明 |
+| `itunes_keywords` | array | - | iTunes検索キーワード（最大12個） |
+| `itunes_explicit` | string | - | 年齢制限（`yes`/`no`/`clean`） |
+| `episode_image` | string | - | エピソード画像ファイル名 |
+| `pub_date` | string | - | 公開日時（ISO 8601形式） |
+| `duration_seconds` | number | - | 再生時間（秒） |
+
+### iTunes拡張フィールドの効果
+
+- **SEO向上**: キーワードでSpotify/Apple Podcasts内検索にヒット
+- **視覚的魅力**: エピソード画像で視聴者の関心を引く
+- **カテゴリ整理**: シーズン・エピソード番号で体系的管理
+- **内容分類**: エピソードタイプでコンテンツを明確化
 
 ## ⚙️ セットアップ
 
@@ -139,10 +197,14 @@ python scripts/build_rss.py --bucket test-bucket --base-url https://test.com
 # Spotify検証テスト  
 python scripts/check_spotify.py --episode-guid test-guid --show-id your-show-id
 
-# メタデータ抽出テスト
+# メタデータ抽出テスト（ファイルモード）
 python scripts/extract_metadata.py --audio-file test.mp3 --base-url https://test.com --commit-sha abc123
-# または
-python scripts/extract_metadata.py --audio-file test.wav --base-url https://test.com --commit-sha abc123
+
+# メタデータ抽出テスト（ディレクトリモード - 推奨）
+python scripts/extract_metadata.py --episode-directory episodes/20250618-test/ --base-url https://test.com --commit-sha abc123
+
+# RSS生成テスト（ディレクトリモード）
+python scripts/build_rss.py --bucket test-bucket --base-url https://test.com --use-episode-directories --episodes-dir episodes/
 ```
 
 ### 手動実行
@@ -151,7 +213,9 @@ GitHub Actionsの「Podcast Release Automation」ワークフローから手動�
 
 1. Actions タブに移動
 2. "Run workflow" をクリック
-3. 音声ファイルパス（MP3/WAV）を指定して実行
+3. エピソードディレクトリまたは音声ファイルパスを指定して実行
+
+**推奨**: エピソードディレクトリモードを使用（例：`episodes/20250618-episode-title/`）
 
 ### モニタリング
 
