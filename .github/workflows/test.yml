@@ -88,15 +88,6 @@ jobs:
             htmlcov/
           retention-days: 30
           
-      - name: Report test summary
-        uses: dorny/test-reporter@v1
-        if: always()
-        with:
-          name: Test Results
-          path: 'test-results.xml,integration-test-results.xml'
-          reporter: java-junit
-          fail-on-error: true
-          
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         if: always()
