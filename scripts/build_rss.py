@@ -107,7 +107,7 @@ class RSSGenerator:
             'language': os.getenv('PODCAST_LANGUAGE', 'ja'),
             'category': os.getenv('PODCAST_CATEGORY', 'Technology'),
             'subcategory': os.getenv('PODCAST_SUBCATEGORY', 'Software Engineering'),
-            'explicit': os.getenv('PODCAST_EXPLICIT', 'false').lower() == 'true',
+            'explicit': 'yes' if os.getenv('PODCAST_EXPLICIT', 'false').lower() == 'true' else 'no',
             'image_url': os.getenv('PODCAST_IMAGE_URL', f'{base_url}/podcast-cover.jpg')
         }
 
@@ -218,6 +218,7 @@ class RSSGenerator:
         
         try:
             fg = FeedGenerator()
+            fg.load_extension('podcast')
             
             # Feed basic information
             fg.title(self.podcast_config['title'])
@@ -272,7 +273,7 @@ class RSSGenerator:
                     fe.podcast.itunes_duration(
                         self._seconds_to_duration(episode.duration_seconds)
                     )
-                fe.podcast.itunes_explicit(False)
+                fe.podcast.itunes_explicit('no')
                 fe.podcast.itunes_summary(episode.description)
             
             # Generate RSS XML
@@ -454,6 +455,7 @@ def main():
     args = parser.parse_args()
     
     # Initialize S3 client
+    s3_client = None
     try:
         s3_client = boto3.client('s3')
     except NoCredentialsError:

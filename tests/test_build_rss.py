@@ -111,7 +111,7 @@ class TestRSSGenerator:
             base_url="https://cdn.test.com"
         )
     
-    def test_rss_generator_initialization(self, mock_s3_client):
+    def test_rss_generator_initialization(self, mock_s3_client, mock_environment_variables):
         """Test RSSGenerator initialization."""
         generator = RSSGenerator(
             s3_client=mock_s3_client,
@@ -151,6 +151,7 @@ class TestRSSGenerator:
         """Test collecting existing episodes from S3."""
         # Mock datetime.now for consistent testing
         mock_datetime.now.return_value = datetime(2025, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+        mock_datetime.utcnow.return_value = datetime(2025, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.strptime.side_effect = datetime.strptime
         
         episodes = rss_generator.collect_existing_episodes()
@@ -183,8 +184,8 @@ class TestRSSGenerator:
         
         rss_xml = rss_generator.generate_rss(episodes)
         
-        assert '<?xml version="1.0"' in rss_xml
-        assert '<rss version="2.0"' in rss_xml
+        assert '<?xml version=' in rss_xml and 'encoding=' in rss_xml
+        assert '<rss' in rss_xml and 'version="2.0"' in rss_xml
         assert '<title>Test Podcast</title>' in rss_xml
         assert '<title>Test Episode</title>' in rss_xml
         assert 'repo-abc1234-20250618-test-episode' in rss_xml
