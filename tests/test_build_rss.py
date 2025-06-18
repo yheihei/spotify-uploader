@@ -34,7 +34,7 @@ class TestEpisodeMetadata:
         assert episode.description == "This is a test episode description"
         assert episode.duration_seconds == 1800
         assert episode.file_size_bytes == 25000000
-        assert episode.mp3_url == "https://cdn.example.com/podcast/2025/20250618-test-episode.mp3"
+        assert episode.audio_url == "https://cdn.example.com/podcast/2025/20250618-test-episode.mp3"
         assert episode.guid == "repo-abc1234-20250618-test-episode"
         assert episode.spotify_url is None
     
@@ -48,7 +48,7 @@ class TestEpisodeMetadata:
         assert result_dict['description'] == episode.description
         assert result_dict['duration_seconds'] == episode.duration_seconds
         assert result_dict['file_size_bytes'] == episode.file_size_bytes
-        assert result_dict['mp3_url'] == episode.mp3_url
+        assert result_dict['audio_url'] == episode.audio_url
         assert result_dict['guid'] == episode.guid
     
     def test_episode_metadata_with_spotify_url(self, sample_episode_metadata):
@@ -156,16 +156,25 @@ class TestRSSGenerator:
         
         episodes = rss_generator.collect_existing_episodes()
         
-        assert len(episodes) == 1
-        episode = episodes[0]
-        assert episode.slug == "20250618-test-episode"
-        assert episode.title == "Test Episode"
-        assert episode.file_size_bytes == 25000000
-        assert episode.mp3_url == "https://cdn.test.com/podcast/2025/20250618-test-episode.mp3"
+        assert len(episodes) == 2  # Now includes both MP3 and WAV files
+        
+        # Find the MP3 episode
+        mp3_episode = next((ep for ep in episodes if ep.file_extension == '.mp3'), None)
+        assert mp3_episode is not None
+        assert mp3_episode.slug == "20250618-test-episode"
+        assert mp3_episode.title == "Test Episode"
+        assert mp3_episode.file_size_bytes == 25000000
+        assert mp3_episode.audio_url == "https://cdn.test.com/podcast/2025/20250618-test-episode.mp3"
+        
+        # Find the WAV episode
+        wav_episode = next((ep for ep in episodes if ep.file_extension == '.wav'), None)
+        assert wav_episode is not None
+        assert wav_episode.slug == "20250618-wav-test-episode"
+        assert wav_episode.audio_url == "https://cdn.test.com/podcast/2025/20250618-wav-test-episode.wav"
         
         # Verify S3 calls
         rss_generator.s3_client.get_paginator.assert_called_once_with('list_objects_v2')
-        rss_generator.s3_client.head_object.assert_called_once()
+        assert rss_generator.s3_client.head_object.call_count == 2  # Called once for each episode
     
     def test_collect_existing_episodes_error_handling(self, rss_generator):
         """Test error handling in collect_existing_episodes."""
@@ -410,7 +419,7 @@ class TestIntegration:
                 "pub_date": f"2025-06-{i%28+1:02d}T10:00:00+00:00",
                 "duration_seconds": 1800,
                 "file_size_bytes": 25000000,
-                "mp3_url": f"https://cdn.test.com/podcast/2025/202506{i:02d}-episode-{i}.mp3",
+                "audio_url": f"https://cdn.test.com/podcast/2025/202506{i:02d}-episode-{i}.mp3",
                 "guid": f"repo-abc123-202506{i:02d}-episode-{i}",
                 "s3_key": f"podcast/2025/202506{i:02d}-episode-{i}.mp3",
                 "year": 2025

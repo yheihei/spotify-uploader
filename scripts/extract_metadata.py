@@ -2,7 +2,7 @@
 """
 Episode Metadata Extraction Script
 
-This script extracts metadata from MP3 files including ID3 tags and file information.
+This script extracts metadata from audio files (MP3/WAV) including ID3 tags and file information.
 It generates the episode GUID and prepares metadata for RSS generation.
 """
 
@@ -25,24 +25,30 @@ logger = logging.getLogger(__name__)
 
 
 class MetadataExtractor:
-    """MP3 metadata extraction utility"""
+    """Audio metadata extraction utility for MP3 and WAV files"""
     
     def __init__(self, base_url: str, commit_sha: str):
         self.base_url = base_url.rstrip('/')
         self.commit_sha = commit_sha
 
-    def extract_from_file(self, mp3_path: str) -> Dict[str, Any]:
-        """Extract complete metadata from MP3 file"""
+    def extract_from_file(self, audio_path: str) -> Dict[str, Any]:
+        """Extract complete metadata from audio file (MP3/WAV)"""
         
-        if not os.path.exists(mp3_path):
-            raise FileNotFoundError(f"MP3 file not found: {mp3_path}")
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
         
         # Extract slug from filename
-        filename = os.path.basename(mp3_path)
-        if not filename.endswith('.mp3'):
-            raise ValueError(f"File is not an MP3: {filename}")
+        filename = os.path.basename(audio_path)
+        if not (filename.endswith('.mp3') or filename.endswith('.wav')):
+            raise ValueError(f"File is not a supported audio format (MP3/WAV): {filename}")
         
-        slug = filename.replace('.mp3', '')
+        # Extract slug and file extension
+        if filename.endswith('.mp3'):
+            slug = filename.replace('.mp3', '')
+            file_extension = '.mp3'
+        else:  # WAV file
+            slug = filename.replace('.wav', '')
+            file_extension = '.wav'
         
         # Validate slug format (YYYYMMDD-title-kebab)
         if not self._validate_slug_format(slug):
@@ -56,13 +62,13 @@ class MetadataExtractor:
             raise ValueError(f"Invalid date in slug: {slug[:8]}")
         
         # Get file information
-        file_size = os.path.getsize(mp3_path)
+        file_size = os.path.getsize(audio_path)
         
         # Load audio metadata
         try:
-            audio_file = mutagen.File(mp3_path)
+            audio_file = mutagen.File(audio_path)
             if audio_file is None:
-                raise ValueError(f"Could not read audio metadata from: {mp3_path}")
+                raise ValueError(f"Could not read audio metadata from: {audio_path}")
             
             # Extract basic info
             duration_seconds = int(audio_file.info.length) if audio_file.info else 0
@@ -72,7 +78,7 @@ class MetadataExtractor:
             description = self._extract_description(audio_file, slug)
             
         except (ID3NoHeaderError, Exception) as e:
-            logger.warning(f"Could not read ID3 tags from {mp3_path}: {e}")
+            logger.warning(f"Could not read audio metadata from {audio_path}: {e}")
             # Fallback to filename-based metadata
             title = self._generate_title_from_slug(slug)
             description = f"Episode: {title}"
@@ -80,8 +86,8 @@ class MetadataExtractor:
         
         # Generate URLs and GUID
         year = pub_date.year
-        s3_key = f"podcast/{year}/{slug}.mp3"
-        mp3_url = f"{self.base_url}/{s3_key}"
+        s3_key = f"podcast/{year}/{slug}{file_extension}"
+        audio_url = f"{self.base_url}/{s3_key}"
         guid = f"repo-{self.commit_sha[:7]}-{slug}"
         
         # Prepare metadata
@@ -92,10 +98,11 @@ class MetadataExtractor:
             'pub_date': pub_date.isoformat(),
             'duration_seconds': duration_seconds,
             'file_size_bytes': file_size,
-            'mp3_url': mp3_url,
+            'audio_url': audio_url,
             'guid': guid,
             's3_key': s3_key,
-            'year': year
+            'year': year,
+            'file_extension': file_extension
         }
         
         logger.info(f"Extracted metadata for episode: {slug}")
@@ -199,12 +206,12 @@ class MetadataExtractor:
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description='Extract metadata from MP3 episode file'
+        description='Extract metadata from audio episode file (MP3/WAV)'
     )
     parser.add_argument(
-        '--mp3-file',
+        '--audio-file',
         required=True,
-        help='Path to MP3 file'
+        help='Path to audio file (MP3 or WAV)'
     )
     parser.add_argument(
         '--base-url',
@@ -224,14 +231,14 @@ def main():
         extractor = MetadataExtractor(args.base_url, args.commit_sha)
         
         # Extract metadata
-        metadata = extractor.extract_from_file(args.mp3_file)
+        metadata = extractor.extract_from_file(args.audio_file)
         
         # Output for GitHub Actions
         print(f"::set-output name=slug::{metadata['slug']}")
         print(f"::set-output name=title::{metadata['title']}")
         print(f"::set-output name=guid::{metadata['guid']}")
         print(f"::set-output name=metadata::{json.dumps(metadata)}")
-        print(f"::set-output name=mp3-path::{args.mp3_file}")
+        print(f"::set-output name=audio-path::{args.audio_file}")
         print(f"::set-output name=s3-key::{metadata['s3_key']}")
         print(f"::set-output name=commit-sha::{args.commit_sha}")
         

@@ -2,7 +2,7 @@
 """
 S3 Upload Script
 
-This script uploads MP3 files to AWS S3 with retry logic and proper
+This script uploads audio files (MP3/WAV) to AWS S3 with retry logic and proper
 metadata configuration for podcast distribution.
 """
 
@@ -61,8 +61,14 @@ class S3Uploader:
                 logger.info(f"Upload attempt {attempt}/{max_retries}")
                 
                 # Prepare upload arguments
+                # Determine content type based on file extension
+                if local_file.lower().endswith('.wav'):
+                    content_type = 'audio/wav'
+                else:  # Default to MP3
+                    content_type = 'audio/mpeg'
+                
                 upload_args = {
-                    'ContentType': 'audio/mpeg',
+                    'ContentType': content_type,
                     'CacheControl': 'public, max-age=300',
                     'ACL': 'public-read'
                 }
@@ -149,6 +155,12 @@ class S3Uploader:
             # Copy object with new metadata
             copy_source = {'Bucket': self.bucket_name, 'Key': s3_key}
             
+            # Determine content type based on file extension
+            if s3_key.lower().endswith('.wav'):
+                content_type = 'audio/wav'
+            else:  # Default to MP3
+                content_type = 'audio/mpeg'
+            
             self.s3_client.copy_object(
                 CopySource=copy_source,
                 Bucket=self.bucket_name,
@@ -156,7 +168,7 @@ class S3Uploader:
                 Metadata=metadata,
                 MetadataDirective='REPLACE',
                 ACL='public-read',
-                ContentType='audio/mpeg',
+                ContentType=content_type,
                 CacheControl='public, max-age=300'
             )
             
@@ -204,12 +216,12 @@ class S3Uploader:
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description='Upload MP3 file to S3 with retry logic'
+        description='Upload audio file (MP3/WAV) to S3 with retry logic'
     )
     parser.add_argument(
-        '--mp3-file',
+        '--audio-file',
         required=True,
-        help='Path to MP3 file to upload'
+        help='Path to audio file (MP3 or WAV) to upload'
     )
     parser.add_argument(
         '--s3-key',
@@ -255,7 +267,7 @@ def main():
         
         # Perform upload
         result = uploader.upload_with_retry(
-            local_file=args.mp3_file,
+            local_file=args.audio_file,
             s3_key=args.s3_key,
             max_retries=args.max_retries,
             metadata=metadata
@@ -263,7 +275,7 @@ def main():
         
         if result['success']:
             # Output for GitHub Actions
-            print(f"::set-output name=mp3-url::{result['url']}")
+            print(f"::set-output name=audio-url::{result['url']}")
             print(f"::set-output name=duration::{result['upload_duration']:.2f}")
             print(f"::set-output name=attempts::{result['attempts']}")
             print(f"::set-output name=file-size::{result['file_size']}")

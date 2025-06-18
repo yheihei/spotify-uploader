@@ -1,8 +1,8 @@
 """
 Tests for metadata extraction script (extract_metadata.py).
 
-This module tests the MP3 metadata extraction functionality including:
-- MP3 file parsing
+This module tests the audio metadata extraction functionality including:
+- Audio file parsing (MP3/WAV)
 - ID3 tag extraction
 - Slug format validation
 - Metadata structure generation
@@ -142,7 +142,7 @@ class TestMetadataExtractor:
         assert result['description'] == "Test episode description"
         assert result['duration_seconds'] == 1800
         assert result['file_size_bytes'] == 25000000
-        assert result['mp3_url'] == "https://cdn.test.com/podcast/2025/20250618-test-episode.mp3"
+        assert result['audio_url'] == "https://cdn.test.com/podcast/2025/20250618-test-episode.mp3"
         assert result['guid'] == "repo-abc1234-20250618-test-episode"
         assert result['s3_key'] == "podcast/2025/20250618-test-episode.mp3"
         assert result['year'] == 2025
@@ -159,7 +159,7 @@ class TestMetadataExtractor:
         """Test metadata extraction with non-existent file."""
         mock_exists.return_value = False
         
-        with pytest.raises(FileNotFoundError, match="MP3 file not found"):
+        with pytest.raises(FileNotFoundError, match="Audio file not found"):
             extractor.extract_from_file("/nonexistent/file.mp3")
     
     @patch('extract_metadata.os.path.exists')
@@ -167,8 +167,28 @@ class TestMetadataExtractor:
         """Test metadata extraction with invalid file extension."""
         mock_exists.return_value = True
         
-        with pytest.raises(ValueError, match="File is not an MP3"):
-            extractor.extract_from_file("/test/file.wav")
+        with pytest.raises(ValueError, match="File is not a supported audio format"):
+            extractor.extract_from_file("/test/file.txt")
+    
+    @patch('extract_metadata.os.path.exists')
+    @patch('extract_metadata.os.path.getsize')
+    @patch('extract_metadata.mutagen.File')
+    def test_extract_from_wav_file_success(self, mock_mutagen, mock_getsize, mock_exists, 
+                                          extractor, mock_mutagen_file):
+        """Test successful metadata extraction from WAV file."""
+        # Setup mocks
+        mock_exists.return_value = True
+        mock_getsize.return_value = 30000000
+        mock_mutagen.return_value = mock_mutagen_file
+        
+        wav_path = "/test/20250618-test-episode.wav"
+        result = extractor.extract_from_file(wav_path)
+        
+        # Verify basic metadata (same as MP3 but with WAV extension)
+        assert result['slug'] == "20250618-test-episode"
+        assert result['audio_url'] == "https://cdn.test.com/podcast/2025/20250618-test-episode.wav"
+        assert result['s3_key'] == "podcast/2025/20250618-test-episode.wav"
+        assert result['file_extension'] == ".wav"
     
     @patch('extract_metadata.os.path.exists')
     def test_extract_from_file_invalid_slug(self, mock_exists, extractor):
@@ -267,7 +287,7 @@ class TestMainFunction:
         
         with patch('extract_metadata.argparse.ArgumentParser.parse_args') as mock_args:
             mock_args.return_value = Mock(
-                mp3_file=test_file,
+                audio_file=test_file,
                 base_url='https://cdn.test.com',
                 commit_sha='abc1234567890'
             )
@@ -296,7 +316,7 @@ class TestMainFunction:
         """Test main function with non-existent file."""
         with patch('extract_metadata.argparse.ArgumentParser.parse_args') as mock_args:
             mock_args.return_value = Mock(
-                mp3_file='/nonexistent/file.mp3',
+                audio_file='/nonexistent/file.mp3',
                 base_url='https://cdn.test.com',
                 commit_sha='abc1234567890'
             )
@@ -315,7 +335,7 @@ class TestMainFunction:
         
         with patch('extract_metadata.argparse.ArgumentParser.parse_args') as mock_args:
             mock_args.return_value = Mock(
-                mp3_file=invalid_file,
+                audio_file=invalid_file,
                 base_url='https://cdn.test.com',
                 commit_sha='abc1234567890'
             )
@@ -432,7 +452,7 @@ class TestIntegration:
             assert result['description'] == "This is an integration test episode"
             assert result['duration_seconds'] == 2400
             assert result['file_size_bytes'] > 100000  # Has actual file size
-            assert result['mp3_url'] == "https://cdn.integration.test/podcast/2025/20250618-integration-test.mp3"
+            assert result['audio_url'] == "https://cdn.integration.test/podcast/2025/20250618-integration-test.mp3"
             assert result['guid'] == "repo-integra-20250618-integration-test"
             assert result['s3_key'] == "podcast/2025/20250618-integration-test.mp3"
             assert result['year'] == 2025

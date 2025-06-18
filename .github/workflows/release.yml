@@ -3,11 +3,11 @@ name: Podcast Release Automation
 on:
   push:
     branches: [main]
-    paths: ['episodes/**/*.mp3']
+    paths: ['episodes/**/*.mp3', 'episodes/**/*.wav']
   workflow_dispatch:
     inputs:
       episode_path:
-        description: 'MP3ファイルのパス (episodes/から始まる相対パス)'
+        description: '音声ファイルのパス (episodes/から始まる相対パス, MP3またはWAV)'
         required: true
         type: string
       force_republish:
@@ -99,7 +99,7 @@ jobs:
       episode-title: ${{ steps.extract.outputs.title }}
       episode-guid: ${{ steps.extract.outputs.guid }}
       episode-metadata: ${{ steps.extract.outputs.metadata }}
-      mp3-path: ${{ steps.extract.outputs.mp3-path }}
+      audio-path: ${{ steps.extract.outputs.audio-path }}
       s3-key: ${{ steps.extract.outputs.s3-key }}
       commit-sha: ${{ steps.extract.outputs.commit-sha }}
       
@@ -119,26 +119,26 @@ jobs:
         run: |
           pip install -r requirements.txt
           
-      - name: Detect changed MP3 files
+      - name: Detect changed audio files
         id: detect
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "mp3_files=${{ github.event.inputs.episode_path }}" >> $GITHUB_OUTPUT
+            echo "audio_files=${{ github.event.inputs.episode_path }}" >> $GITHUB_OUTPUT
           else
-            # Git diffで変更されたMP3ファイルを検出
-            mp3_files=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep 'episodes/.*\.mp3$' || echo "")
-            if [ -z "$mp3_files" ]; then
-              echo "No MP3 files found in the diff" >&2
+            # Git diffで変更された音声ファイルを検出
+            audio_files=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep 'episodes/.*\.(mp3|wav)$' || echo "")
+            if [ -z "$audio_files" ]; then
+              echo "No audio files (MP3/WAV) found in the diff" >&2
               exit 1
             fi
-            echo "mp3_files=$mp3_files" >> $GITHUB_OUTPUT
+            echo "audio_files=$audio_files" >> $GITHUB_OUTPUT
           fi
           
       - name: Extract episode metadata
         id: extract
         run: |
           python scripts/extract_metadata.py \
-            --mp3-file "${{ steps.detect.outputs.mp3_files }}" \
+            --audio-file "${{ steps.detect.outputs.audio_files }}" \
             --base-url "${{ env.BASE_URL }}" \
             --commit-sha "${{ github.sha }}"
             
@@ -148,12 +148,12 @@ jobs:
             --metadata '${{ steps.extract.outputs.metadata }}'
 
   upload:
-    name: Upload MP3 to S3
+    name: Upload Audio to S3
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      mp3-url: ${{ steps.upload.outputs.mp3-url }}
+      audio-url: ${{ steps.upload.outputs.audio-url }}
       upload-duration: ${{ steps.upload.outputs.duration }}
       
     steps:
@@ -176,11 +176,11 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           
-      - name: Upload MP3 to S3
+      - name: Upload Audio to S3
         id: upload
         run: |
           python scripts/upload_s3.py \
-            --mp3-file "${{ needs.setup.outputs.mp3-path }}" \
+            --audio-file "${{ needs.setup.outputs.audio-path }}" \
             --s3-key "${{ needs.setup.outputs.s3-key }}" \
             --bucket "${{ env.AWS_S3_BUCKET }}" \
             --max-retries "${{ env.MAX_RETRY_ATTEMPTS }}"
@@ -266,7 +266,7 @@ jobs:
           python scripts/generate_summary.py \
             --episode-slug "${{ needs.setup.outputs.episode-slug }}" \
             --episode-title "${{ needs.setup.outputs.episode-title }}" \
-            --mp3-url "${{ needs.upload.outputs.mp3-url }}" \
+            --audio-url "${{ needs.upload.outputs.audio-url }}" \
             --rss-url "${{ needs.rss-deploy.outputs.rss-url }}" \
             --spotify-url "${{ steps.verify.outputs.spotify-url }}" \
             --verification-status "${{ steps.verify.outputs.status }}" \
