@@ -116,6 +116,15 @@ class MetadataExtractor:
         if not date_part.isdigit():
             return False
         
+        # Validate date is actually a valid date
+        try:
+            parsed_date = datetime.strptime(date_part, '%Y%m%d')
+            # Check reasonable year range (1900-2099)
+            if not (1900 <= parsed_date.year <= 2099):
+                return False
+        except ValueError:
+            return False
+        
         # Check separator
         if slug[8] != '-':
             return False

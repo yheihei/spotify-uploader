@@ -692,7 +692,7 @@ class TestIntegration:
             # Mock successful operations
             mock_client.head_bucket.return_value = None
             mock_client.upload_file.return_value = None
-            mock_client.head_object.return_value = {'ContentLength': 100004}
+            mock_client.head_object.return_value = {'ContentLength': 100007}
             mock_client.get_bucket_location.return_value = {'LocationConstraint': 'us-west-2'}
             
             uploader = S3Uploader("integration-test-bucket", "us-west-2")
@@ -720,7 +720,7 @@ class TestIntegration:
             
             # Verify successful upload
             assert result['success'] is True
-            assert result['file_size'] == 100004
+            assert result['file_size'] == 100007
             assert result['attempts'] == 1
             assert result['url'] == "https://integration-test-bucket.s3.amazonaws.com/podcast/2025/integration-test.mp3"
             

@@ -259,8 +259,10 @@ class TestMainFunction:
             f.write(b'ID3\x03\x00\x00\x00' + b'0' * 1000)
         
         # Rename to valid slug format
-        test_file = temporary_mp3_file.replace('.mp3', '')
-        test_file = f"{test_file[:-10]}20250618-test-episode.mp3"
+        import tempfile
+        import os
+        test_dir = os.path.dirname(temporary_mp3_file)
+        test_file = os.path.join(test_dir, "20250618-test-episode.mp3")
         os.rename(temporary_mp3_file, test_file)
         
         with patch('extract_metadata.argparse.ArgumentParser.parse_args') as mock_args:

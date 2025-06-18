@@ -176,6 +176,11 @@ class MetadataValidator:
         if not pub_date:
             return  # Already caught by required fields check
         
+        # Check for complete ISO 8601 format (require time component)
+        if 'T' not in pub_date:
+            self.errors.append(f"Publication date must include time component: {pub_date}")
+            return
+            
         try:
             parsed_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
             
@@ -308,19 +313,19 @@ def main():
         is_valid = validator.validate(metadata)
         
         # Output validation results
+        # Output errors for GitHub Actions
+        for error in validator.errors:
+            print(f"::error title=Validation Error::{error}")
+        
+        # Output warnings for GitHub Actions
+        for warning in validator.warnings:
+            print(f"::warning title=Validation Warning::{warning}")
+        
         if is_valid:
             logger.info("✅ Metadata validation successful")
             sys.exit(0)
         else:
             logger.error("❌ Metadata validation failed")
-            
-            # Output errors for GitHub Actions
-            for error in validator.errors:
-                print(f"::error title=Validation Error::{error}")
-            
-            for warning in validator.warnings:
-                print(f"::warning title=Validation Warning::{warning}")
-            
             sys.exit(1)
             
     except json.JSONDecodeError as e:

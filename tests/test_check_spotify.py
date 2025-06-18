@@ -147,6 +147,7 @@ class TestSpotifyVerifier:
         """Test successful authentication."""
         # Mock current time
         mock_datetime.now.return_value.timestamp.return_value = 1000000
+        mock_datetime.utcnow.return_value.isoformat.return_value = '2025-06-18T10:00:00'
         
         # Mock successful auth response
         mock_response = Mock()
@@ -208,6 +209,7 @@ class TestSpotifyVerifier:
     def test_ensure_valid_token_no_token(self, mock_datetime, verifier):
         """Test ensuring valid token when no token exists."""
         mock_datetime.now.return_value.timestamp.return_value = 1000000
+        mock_datetime.utcnow.return_value.isoformat.return_value = '2025-06-18T10:00:00'
         
         # Mock successful authentication
         with patch.object(verifier, 'authenticate', return_value=True) as mock_auth:
@@ -221,6 +223,7 @@ class TestSpotifyVerifier:
         """Test ensuring valid token when token is expired."""
         current_time = 1000000
         mock_datetime.now.return_value.timestamp.return_value = current_time
+        mock_datetime.utcnow.return_value.isoformat.return_value = '2025-06-18T10:00:00'
         
         # Set expired token
         verifier.access_token = "expired_token"
@@ -237,6 +240,7 @@ class TestSpotifyVerifier:
         """Test ensuring valid token when token is still valid."""
         current_time = 1000000
         mock_datetime.now.return_value.timestamp.return_value = current_time
+        mock_datetime.utcnow.return_value.isoformat.return_value = '2025-06-18T10:00:00'
         
         # Set valid token (expires in 10 minutes)
         verifier.access_token = "valid_token"
@@ -439,7 +443,7 @@ class TestSpotifyVerifier:
     @patch('check_spotify.time.time')
     def test_verify_episode_with_polling_success(self, mock_time, mock_sleep, verifier):
         """Test successful episode verification with polling."""
-        mock_time.side_effect = [0, 30, 60]  # Start, after first attempt, end
+        mock_time.side_effect = [0, 30]  # Start, after second attempt
         
         target_guid = "repo-abc123-20250618-test"
         
@@ -461,7 +465,7 @@ class TestSpotifyVerifier:
             assert result.success is True
             assert result.episode_guid == target_guid
             assert result.attempts_made == 2
-            assert result.time_taken_seconds == 60
+            assert result.time_taken_seconds == 30
             assert result.spotify_episode_id == 'episode123'
             assert result.spotify_url == 'https://open.spotify.com/episode/episode123'
             
@@ -472,7 +476,7 @@ class TestSpotifyVerifier:
     @patch('check_spotify.time.time')
     def test_verify_episode_with_polling_failure(self, mock_time, mock_sleep, verifier):
         """Test episode verification failure after all attempts."""
-        mock_time.side_effect = list(range(0, 301, 30))  # 0, 30, 60, ..., 300
+        mock_time.side_effect = [0, 300]  # Start, after all attempts
         
         target_guid = "repo-abc123-20250618-missing"
         
