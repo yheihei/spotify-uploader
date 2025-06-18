@@ -1,0 +1,12 @@
+{
+  "slug": "20250618-sample-episode",
+  "title": "Sample Episode Title",
+  "description": "This is a sample episode description for testing purposes.",
+  "pub_date": "2025-06-18T10:00:00+00:00",
+  "duration_seconds": 3600,
+  "file_size_bytes": 50000000,
+  "mp3_url": "https://cdn.example.com/podcast/2025/20250618-sample-episode.mp3",
+  "guid": "repo-abc1234-20250618-sample-episode",
+  "s3_key": "podcast/2025/20250618-sample-episode.mp3",
+  "year": 2025
+}
