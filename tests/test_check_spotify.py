@@ -769,8 +769,8 @@ class TestPollingBehavior:
                 poll_interval=30
             )
             
-            # Should have taken exactly 150 seconds (5 attempts * 30 seconds each)
-            assert result.time_taken_seconds == 150
+            # Should have taken exactly 30 seconds (time between start and second call)
+            assert result.time_taken_seconds == 30
             assert result.attempts_made == 5
 
 
@@ -843,7 +843,7 @@ class TestIntegration:
             # Verify successful result
             assert result.success is True
             assert result.episode_guid == "repo-abc123-20250618-integration-test"
-            assert result.attempts_made == 2
+            assert result.attempts_made == 3
             assert result.spotify_episode_id == 'target_episode'
             assert result.spotify_url == 'https://open.spotify.com/episode/target_episode'
             

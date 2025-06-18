@@ -407,66 +407,67 @@ class SpotifyVerifier:
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(
-        description='Verify podcast episode indexing on Spotify'
-    )
-    parser.add_argument(
-        '--episode-guid',
-        required=True,
-        help='Episode GUID to verify'
-    )
-    parser.add_argument(
-        '--show-id',
-        required=True,
-        help='Spotify show ID'
-    )
-    parser.add_argument(
-        '--client-id',
-        required=True,
-        help='Spotify client ID'
-    )
-    parser.add_argument(
-        '--client-secret',
-        required=True,
-        help='Spotify client secret'
-    )
-    parser.add_argument(
-        '--refresh-token',
-        required=True,
-        help='Spotify refresh token'
-    )
-    parser.add_argument(
-        '--max-attempts',
-        type=int,
-        default=10,
-        help='Maximum polling attempts (default: 10)'
-    )
-    parser.add_argument(
-        '--poll-interval',
-        type=int,
-        default=30,
-        help='Polling interval in seconds (default: 30)'
-    )
-    
-    args = parser.parse_args()
-    
-    # Initialize Spotify verifier
-    verifier = SpotifyVerifier(
-        client_id=args.client_id,
-        client_secret=args.client_secret,
-        refresh_token=args.refresh_token
-    )
-    
-    # Validate show ID first
-    show_info = verifier.get_show_info(args.show_id)
-    if not show_info:
-        logger.error(f"Could not validate show ID: {args.show_id}")
-        sys.exit(1)
-    
-    logger.info(f"Validating show: {show_info.get('name', 'Unknown')}")
-    
-    # Perform verification
     try:
+        parser = argparse.ArgumentParser(
+            description='Verify podcast episode indexing on Spotify'
+        )
+        parser.add_argument(
+            '--episode-guid',
+            required=True,
+            help='Episode GUID to verify'
+        )
+        parser.add_argument(
+            '--show-id',
+            required=True,
+            help='Spotify show ID'
+        )
+        parser.add_argument(
+            '--client-id',
+            required=True,
+            help='Spotify client ID'
+        )
+        parser.add_argument(
+            '--client-secret',
+            required=True,
+            help='Spotify client secret'
+        )
+        parser.add_argument(
+            '--refresh-token',
+            required=True,
+            help='Spotify refresh token'
+        )
+        parser.add_argument(
+            '--max-attempts',
+            type=int,
+            default=10,
+            help='Maximum polling attempts (default: 10)'
+        )
+        parser.add_argument(
+            '--poll-interval',
+            type=int,
+            default=30,
+            help='Polling interval in seconds (default: 30)'
+        )
+        
+        args = parser.parse_args()
+        
+        # Initialize Spotify verifier
+        verifier = SpotifyVerifier(
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            refresh_token=args.refresh_token
+        )
+        
+        # Validate show ID first
+        show_info = verifier.get_show_info(args.show_id)
+        if not show_info:
+            logger.error(f"Could not validate show ID: {args.show_id}")
+            sys.exit(1)
+            return
+        
+        logger.info(f"Validating show: {show_info.get('name', 'Unknown')}")
+        
+        # Perform verification
         result = verifier.verify_episode_with_polling(
             show_id=args.show_id,
             episode_guid=args.episode_guid,
